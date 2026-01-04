@@ -1,0 +1,742 @@
+
+╭─── Claude Code v2.0.76 ──────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│                    Welcome back!                   │ started                 │
+│                                                    │ Run /init to create a … │
+│                     * ▐▛███▜▌ *                    │ ─────────────────────── │
+│                    * ▝▜█████▛▘ *                   │ Recent activity         │
+│                     *  ▘▘ ▝▝  *                    │ No recent activity      │
+│                                                    │                         │
+│ global.anthropic.claude-opus-… · API Usage Billing │                         │
+│            ~/github/go-kratos/my-kratos            │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+  Welcome to Opus 4.5
+
+> 我希望kratos支持nats作为rpc传输层，nats rpc已有比较成熟的实现，@https://gi
+thub.com/byebyebruce/natsrpc，帮我仔细想一下该如何实现  ultrathink!
+
+⏺ 我来帮你分析如何在 Kratos 中实现 NATS 作为 RPC 传输层。让我先探索代码库并获取 natsrpc 库的信息。
+
+⏺ Explore(Explore Kratos transport layer)
+  ⎿  Done (0 tool uses · 0 tokens · 1s)                                    
+
+⏺ Fetch(https://github.com/byebyebruce/natsrpc)
+  ⎿  Error: Claude Code is unable to fetch from github.com
+
+⏺ 让我直接探索代码库和获取 natsrpc 库信息：
+
+⏺ Search(pattern: "**/transport/**/*.go")
+  ⎿  Found 50 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/grpc/**/*.go")
+  ⎿  Found 19 files (ctrl+o to expand)
+
+⏺ Bash(cd /tmp && rm -rf natsrpc && git clone --depth 1              timeout: 1m 
+      https://github.com/byebyebruce/natsrpc.git 2>/dev/null &&      0s
+      find natsrpc -name "*.go" -type f | head -30)
+  ⎿  natsrpc/option.go                                            
+     natsrpc/cmd/protoc-gen-natsrpc/gen.go
+     natsrpc/cmd/protoc-gen-natsrpc/spec.go
+     … +27 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /Users/duxg/github/go-kratos/my-kratos
+
+⏺ 让我读取关键文件来深入了解两边的架构：
+
+⏺ Read(transport/transport.go)
+  ⎿  Read 96 lines
+
+⏺ Read(transport/grpc/server.go)
+  ⎿  Read 278 lines
+
+⏺ Read(transport/grpc/client.go)
+  ⎿  Read 334 lines
+
+⏺ Read(/tmp/natsrpc/server.go)
+  ⎿  Read 235 lines
+
+⏺ Read(/tmp/natsrpc/client.go)
+  ⎿  Read 89 lines
+
+⏺ Read(/tmp/natsrpc/natsrpc.go)
+  ⎿  Read 85 lines
+
+⏺ 让我继续阅读更多关键文件来深入了解架构细节：
+
+⏺ Read(/tmp/natsrpc/service.go)
+  ⎿  Read 84 lines
+
+⏺ Read(/tmp/natsrpc/option.go)
+  ⎿  Read 139 lines
+
+⏺ Read(/tmp/natsrpc/header.go)
+  ⎿  Read 92 lines
+
+⏺ Read(transport/grpc/transport.go)
+  ⎿  Read 85 lines
+
+⏺ Read(transport/grpc/interceptor.go)
+  ⎿  Read 149 lines
+
+⏺ 让我看看 protoc-gen-natsrpc 以了解代码生成部分，以及 Kratos 的 middleware 接口：
+
+⏺ Read(/tmp/natsrpc/cmd/protoc-gen-natsrpc/gen.go)
+  ⎿  Read 236 lines
+
+⏺ Read(middleware/middleware.go)
+  ⎿  Read 22 lines
+
+⏺ Search(pattern: "**/contrib/**/*.go")
+  ⎿  Found 85 files (ctrl+o to expand)
+
+⏺ 让我看看 contrib/transport/mcp 的实现以及 natsrpc 的 spec.go：
+
+⏺ Read(contrib/transport/mcp/server.go)
+  ⎿  Read 118 lines
+
+⏺ Read(/tmp/natsrpc/cmd/protoc-gen-natsrpc/spec.go)
+  ⎿  Read 53 lines
+
+⏺ Read(/tmp/natsrpc/example/1_request/main.go)
+  ⎿  Read 59 lines
+
+⏺ 让我再看看 natsrpc 生成的代码和模板：
+
+⏺ Read(/tmp/natsrpc/cmd/protoc-gen-natsrpc/tmpl.gohtml)
+  ⎿  Read 111 lines
+
+⏺ Read(/tmp/natsrpc/example/example_natsrpc.pb.go)
+  ⎿  Read 128 lines
+
+⏺ 让我看看 Kratos 的 app 和 endpoint 相关代码：
+
+⏺ Read(app.go)
+  ⎿  Read 213 lines
+
+⏺ Read(internal/endpoint/endpoint.go)
+  ⎿  Read 35 lines
+
+⏺ 现在我对两边的架构有了全面的了解。在制定详细计划之前，我需要确认几个关键问题：
+                                                            
+⏺ User answered Claude's questions:
+  ⎿  · 代码应该放在哪个位置？ → transport/nats
+     · 是否需要支持 Kratos 的服务发现（registry）机制？ → 否
+     · 你希望 NATS transport 的集成深度是哪种？ → 适配层集成
+
+⏺ 了解了你的需求。让我基于你的选择来制定详细的实现计划：
+
+  你的选择：
+  - 适配层集成：保持 natsrpc 原有代码生成方式，创建适配层
+  - 不需要服务发现：使用 NATS 内置机制
+  - 代码位置：transport/nats (核心 transport 实现)
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ 我已经完成了详细的实现计划。主要内容包括：
+
+  计划摘要
+
+  核心文件结构：
+  transport/nats/
+  ├── server.go      # 实现 transport.Server + Endpointer
+  ├── client.go      # 封装 natsrpc.Client
+  ├── transport.go   # 实现 transport.Transporter
+  ├── options.go     # Server/Client 配置选项
+  └── server_test.go # 测试
+
+  关键设计：
+  1. Server 适配器 - 内嵌 natsrpc.Server，实现 Kratos 的 transport.Server 接口
+  2. Client 适配器 - 封装 natsrpc.Client，提供便捷的 Dial 方法
+  3. Middleware 适配 - 将 Kratos middleware 转换为 natsrpc interceptor
+  4. Header 传递 - 适配 map[string]string 到 transport.Header
+
+  使用方式保持简洁：
+  - 使用 natsrpc 原有的 protoc-gen-natsrpc 生成代码
+  - Server 可直接作为 Kratos app 的 Server 组件
+  - 支持 Kratos middleware (recovery, tracing, etc.)
+                                                                           
+⏺ User approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/kind-greeting-toast.md · /plan to edit
+     Kratos NATS RPC Transport 实现计划
+
+     目标
+
+     将 https://github.com/byebyebruce/natsrpc 集成到 Kratos 框架，作为新的 
+     RPC 传输层。
+
+     设计决策
+
+     - 集成方式: 适配层集成，保持 natsrpc 原有代码生成方式
+     - 服务发现: 使用 NATS 内置机制，不集成 Kratos registry
+     - 代码位置: transport/nats/ (与 grpc/http 同级)
+
+     架构概览
+
+     transport/nats/
+     ├── server.go          # Server 适配器，实现 transport.Server 和 
+     transport.Endpointer
+     ├── client.go          # Client 适配器，封装 natsrpc.Client
+     ├── transport.go       # Transport 结构体，实现 transport.Transporter
+     ├── options.go         # Server/Client 配置选项
+     ├── codec.go           # 编解码适配（可选，复用 kratos encoding）
+     └── server_test.go     # 测试文件
+
+     实现步骤
+
+     1. 定义 transport.Kind 常量
+
+     在 transport/transport.go 中添加：
+     const KindNATS Kind = "nats"
+
+     2. 创建 Server 适配器 (transport/nats/server.go)
+
+     实现 transport.Server 和 transport.Endpointer 接口：
+
+     type Server struct {
+         *natsrpc.Server                    // 内嵌 natsrpc.Server
+         conn       *nats.Conn              // NATS 连接
+         endpoint   *url.URL                // 服务端点
+         address    string                  // NATS 服务器地址
+         middleware matcher.Matcher         // Kratos 中间件匹配器
+         timeout    time.Duration           // 请求超时
+         opts       serverOptions           // 配置选项
+     }
+
+     // 关键方法:
+     // - Start(ctx) error     → 启动 NATS 连接并订阅服务
+     // - Stop(ctx) error      → 优雅关闭连接
+     // - Endpoint() (*url.URL, error) → 返回 nats://host:port
+     // - RegisterService(sd, svc) → 代理到 natsrpc.Server.Register
+
+     关键设计点:
+     - Server 在 Start() 时建立 NATS 连接（如果未提供现有连接）
+     - Endpoint 格式：nats://host:port?namespace=xxx
+     - 支持通过 Option 注入已有的 *nats.Conn
+
+     3. 创建 Client 适配器 (transport/nats/client.go)
+
+     封装 natsrpc.Client，便于 Kratos 应用使用：
+
+     type Client struct {
+         *natsrpc.Client
+         conn     *nats.Conn
+         endpoint string
+         opts     clientOptions
+     }
+
+     // 创建函数:
+     // - Dial(ctx, opts...) (*Client, error) → 创建客户端连接
+     // - NewClient(conn, opts...) *Client   → 使用现有连接创建
+
+     4. 创建 Transport 结构体 (transport/nats/transport.go)
+
+     实现 transport.Transporter 接口，用于中间件获取请求上下文：
+
+     type Transport struct {
+         endpoint    string
+         operation   string           // 格式: /service/method
+         reqHeader   headerCarrier
+         replyHeader headerCarrier
+     }
+
+     // 实现:
+     // - Kind() → transport.KindNATS
+     // - Endpoint() string
+     // - Operation() string
+     // - RequestHeader() transport.Header
+     // - ReplyHeader() transport.Header
+
+     type headerCarrier map[string]string
+     // 实现 transport.Header 接口
+
+     5. 配置选项 (transport/nats/options.go)
+
+     Server Options:
+     func Address(addr string) ServerOption           // NATS 服务器地址
+     func Endpoint(ep *url.URL) ServerOption          // 自定义 endpoint
+     func Timeout(d time.Duration) ServerOption       // 请求超时
+     func Middleware(m ...middleware.Middleware) ServerOption
+     func Connection(conn *nats.Conn) ServerOption    // 使用现有连接
+     func Namespace(ns string) ServerOption           // 服务命名空间
+     func ErrorHandler(h func(interface{})) ServerOption
+     func RecoveryHandler(h func(interface{})) ServerOption
+     func NatsOptions(opts ...nats.Option) ServerOption
+
+     Client Options:
+     func WithEndpoint(endpoint string) ClientOption
+     func WithTimeout(d time.Duration) ClientOption
+     func WithMiddleware(m ...middleware.Middleware) ClientOption
+     func WithConnection(conn *nats.Conn) ClientOption
+     func WithNamespace(ns string) ClientOption
+     func WithNatsOptions(opts ...nats.Option) ClientOption
+
+     6. Kratos Middleware 适配
+
+     将 Kratos 的 middleware.Middleware 转换为 natsrpc 的 Interceptor：
+
+     // 在 server 端处理请求时注入 transport context
+     func (s *Server) wrapHandler(method string, handler natsrpc.Handler) 
+     natsrpc.Handler {
+         return func(svc interface{}, ctx context.Context, dec func(any) 
+     error) (interface{}, error) {
+             // 1. 从 natsrpc context 提取 header
+             header := natsrpc.CallHeader(ctx)
+
+             // 2. 构建 Transport
+             tr := &Transport{
+                 endpoint:  s.endpoint.String(),
+                 operation: method,
+                 reqHeader: headerCarrier(header),
+             }
+
+             // 3. 注入 context
+             ctx = transport.NewServerContext(ctx, tr)
+
+             // 4. 执行 middleware chain
+             h := func(ctx context.Context, req any) (any, error) {
+                 return handler(svc, ctx, dec)
+             }
+             if next := s.middleware.Match(method); len(next) > 0 {
+                 h = middleware.Chain(next...)(h)
+             }
+
+             return h(ctx, nil)
+         }
+     }
+
+     使用示例
+
+     Server 端
+
+     import (
+         "github.com/go-kratos/kratos/v2"
+         "github.com/go-kratos/kratos/v2/transport/nats"
+         "github.com/go-kratos/kratos/v2/middleware/recovery"
+     )
+
+     func main() {
+         // 创建 NATS server
+         natsSrv, _ := nats.NewServer(
+             nats.Address("nats://localhost:4222"),
+             nats.Namespace("myapp"),
+             nats.Middleware(recovery.Recovery()),
+         )
+
+         // 注册服务 (使用 natsrpc 生成的代码)
+         example.RegisterGreetingNRServer(natsSrv, &GreeterService{})
+
+         // 启动 Kratos app
+         app := kratos.New(
+             kratos.Server(natsSrv),
+         )
+         app.Run()
+     }
+
+     Client 端
+
+     import "github.com/go-kratos/kratos/v2/transport/nats"
+
+     func main() {
+         // 创建 NATS client
+         client, _ := nats.Dial(context.Background(),
+             nats.WithEndpoint("nats://localhost:4222"),
+             nats.WithNamespace("myapp"),
+         )
+         defer client.Close()
+
+         // 使用 natsrpc 生成的客户端代码
+         greeter := example.NewGreetingNRClient(client)
+         reply, _ := greeter.Hello(ctx, &example.HelloRequest{Name: 
+     "kratos"})
+     }
+
+     文件清单
+
+     | 文件路径                      | 说明                     |
+     |-------------------------------|--------------------------|
+     | transport/transport.go        | 添加 KindNATS 常量       |
+     | transport/nats/server.go      | Server 适配器实现        |
+     | transport/nats/client.go      | Client 适配器实现        |
+     | transport/nats/transport.go   | Transporter 实现         |
+     | transport/nats/options.go     | 配置选项                 |
+     | transport/nats/codec.go       | 编解码适配（可选）       |
+     | transport/nats/server_test.go | 单元测试                 |
+     | transport/nats/go.mod         | 模块依赖（如需独立模块） |
+
+     依赖
+
+     require (
+         github.com/byebyebruce/natsrpc v0.7.0
+         github.com/nats-io/nats.go v1.x.x
+     )
+
+     注意事项
+
+     1. 连接管理: Server/Client 支持两种模式
+       - 自动管理：传入 NATS 地址，Start() 时建立连接
+       - 外部管理：传入已有 *nats.Conn，Server 不负责关闭
+     2. Context 传递: 需要在 natsrpc handler 调用前注入 Kratos transport 
+     context
+     3. Header 映射: natsrpc 使用 map[string]string，需要适配 
+     transport.Header 接口
+     4. 错误处理: 将 natsrpc 错误映射到 Kratos 错误体系
+     5. 优雅关闭: Stop() 需要等待正在处理的请求完成
+
+
+⏺ 计划已批准！让我开始实现。首先创建任务列表来跟踪进度：
+
+⏺ Update(transport/transport.go)
+  ⎿  Added 1 line                                                        
+      65  const (                                                        
+      66    KindGRPC Kind = "grpc"                                       
+      67    KindHTTP Kind = "http"                                       
+      68 +  KindNATS Kind = "nats"                                       
+      69  )                                                              
+      70                                                                 
+      71  type (                                                         
+
+⏺ Bash(mkdir -p /Users/duxg/github/go-kratos/my-kratos/transport/nats)
+  ⎿  (No content)
+
+⏺ Write(transport/nats/transport.go)
+  ⎿  Wrote 76 lines to transport/nats/transport.go  
+     package nats
+     import (
+       "github.com/go-kratos/kratos/v2/transport"
+     )
+     var _ transport.Transporter = (*Transport)(nil)
+     // Transport is a NATS transport.
+     type Transport struct {
+     … +66 lines (ctrl+o to expand)
+
+⏺ Write(transport/nats/options.go)
+  ⎿  Wrote 128 lines to transport/nats/options.go 
+     package nats
+     import (
+       "net/url"
+       "time"
+       "github.com/nats-io/nats.go"
+       "github.com/go-kratos/kratos/v2/middleware"
+     )
+     … +118 lines (ctrl+o to expand)
+
+⏺ Write(transport/nats/server.go)
+  ⎿  Wrote 208 lines to transport/nats/server.go
+     package nats
+     import (
+       "context"
+       "fmt"
+       "net/url"
+       "time"
+       "github.com/byebyebruce/natsrpc"
+       "github.com/nats-io/nats.go"
+     … +198 lines (ctrl+o to expand)
+
+⏺ Write(transport/nats/client.go)
+  ⎿  Wrote 152 lines to transport/nats/client.go
+     package nats
+     import (
+       "context"
+       "fmt"
+       "time"
+       "github.com/byebyebruce/natsrpc"
+       "github.com/nats-io/nats.go"
+     … +142 lines (ctrl+o to expand)
+
+⏺ Write(transport/nats/server_test.go)
+  ⎿  Wrote 153 lines to transport/nats/server_test.go
+     package nats
+     import (
+       "context"
+       "net/url"
+       "testing"
+       "time"
+       "github.com/go-kratos/kratos/v2/transport"
+     )
+     … +143 lines (ctrl+o to expand)
+
+⏺ Bash(go get github.com/byebyebruce/natsrpc@latest
+      github.com/nats-io/nats.go@latest)
+  ⎿  go: downloading github.com/nats-io/nats.go v1.48.0   
+     go: downloading github.com/byebyebruce/natsrpc v0.7.0
+     go: downloading github.com/klauspost/compress v1.18.0
+     … +13 lines (ctrl+o to expand)
+
+⏺ Bash(go build ./transport/nats/...) timeout: 1m 0s
+  ⎿  Error: Exit code 1
+     # github.com/go-kratos/kratos/v2/transport/nats
+     transport/nats/client.go:15:33: cannot use (*Client)(nil) (value of type 
+     *Client) as natsrpc.ClientInterface value in variable declaration: *Client 
+     does not implement natsrpc.ClientInterface (missing method Publish)
+     transport/nats/client.go:122:19: c.client.Invoke undefined (type 
+     *natsrpc.Client has no field or method Invoke)
+
+⏺ 让我检查一下 natsrpc 的最新接口定义：
+
+⏺ Bash(cd /tmp && rm -rf natsrpc && git clone --depth 1            timeout: 1m 
+      https://github.com/byebyebruce/natsrpc.git 2>/dev/null &&    0s
+      cat natsrpc/natsrpc.go)
+  ⎿  package natsrpc                                              
+
+     import (
+     … +84 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /Users/duxg/github/go-kratos/my-kratos
+
+⏺ Bash(cat /tmp/natsrpc/client.go)
+  ⎿  package natsrpc               
+
+     import (
+     … +87 lines (ctrl+o to expand)
+
+⏺ Bash(go mod tidy && go build ./transport/nats/...)
+  ⎿  Error: Exit code 1
+     # github.com/go-kratos/kratos/v2/transport/nats
+     transport/nats/client.go:15:33: cannot use (*Client)(nil) (value of type 
+     *Client) as natsrpc.ClientInterface value in variable declaration: *Client 
+     does not implement natsrpc.ClientInterface (missing method Publish)
+     transport/nats/client.go:122:19: c.client.Invoke undefined (type 
+     *natsrpc.Client has no field or method Invoke)
+
+⏺ Bash(cat go.mod | grep natsrpc)
+  ⎿  	github.com/byebyebruce/natsrpc v0.7.0       
+
+⏺ Bash(cat $(go env
+      GOMODCACHE)/github.com/byebyebruce/natsrpc@v0.7.0/natsrpc.go)
+  ⎿  package natsrpc               
+
+     import (
+     … +87 lines (ctrl+o to expand)
+
+⏺ Bash(cat $(go env GOMODCACHE)/github.com/byebyebruce/natsrpc@v0.7.0/client.go)
+  ⎿  package natsrpc               
+
+     import (
+     … +93 lines (ctrl+o to expand)
+
+⏺ 我需要修改 client.go 来适配 v0.7.0 版本的接口（使用 Request 和 Publish 而不是 Invoke）：
+
+⏺ Write(transport/nats/client.go)
+  ⎿  Added 43 lines, removed 3 lines                                     
+      91    }                                                            
+      92  }                                                              
+      93                                                                 
+      94 -// Invoke calls a remote method.                               
+      94 +// Publish publishes a message without waiting for response.   
+      95  // This method implements natsrpc.ClientInterface.             
+      96 -func (c *Client) Invoke(ctx context.Context,                   
+         -service, method string, req interface{}, rep interface{},      
+         -opt ...natsrpc.CallOption) error {                             
+      96 +func (c *Client) Publish(                                      
+         +service, method string, req interface{},                       
+         +opt ...natsrpc.CallOption) error {                             
+      97    // Build operation name                                      
+      98    operation := fmt.Sprintf("/%s/%s", service, method)          
+      99                                                                 
+     ...
+      106    }                                                           
+      107                                                                
+      108    // Inject client transport context                          
+      109 +  ctx := transport.NewClientContext(context.Background(), tr) 
+      110 +                                                              
+      111 +  // Build handler                                            
+      112 +  h := func(ctx context.Context, req any) (any, error) {      
+      113 +    // Extract headers from transport and add to call options 
+      114 +    header := make(map[string]string)                         
+      115 +    for _, k := range tr.reqHeader.Keys() {                   
+      116 +      header[k] = tr.reqHeader.Get(k)                         
+      117 +    }                                                         
+      118 +    if len(header) > 0 {                                      
+      119 +      opt = append(opt, natsrpc.WithCallHeader(header))       
+      120 +    }                                                         
+      121 +                                                              
+      122 +    return nil, c.client.Publish(service, method, req,        
+          +opt...)                                                       
+      123 +  }                                                           
+      124 +                                                              
+      125 +  // Apply middleware                                         
+      126 +  if len(c.middleware) > 0 {                                  
+      127 +    h = middleware.Chain(c.middleware...)(h)                  
+      128 +  }                                                           
+      129 +                                                              
+      130 +  _, err := h(ctx, req)                                       
+      131 +  return err                                                  
+      132 +}                                                             
+      133 +                                                              
+      134 +// Request sends a request and waits for response.            
+      135 +// This method implements natsrpc.ClientInterface.            
+      136 +func (c *Client) Request(ctx context.Context, service, method 
+          + string, req interface{}, rep interface{}, opt                
+          +...natsrpc.CallOption) error {                                
+      137 +  // Build operation name                                     
+      138 +  operation := fmt.Sprintf("/%s/%s", service, method)         
+      139 +                                                              
+      140 +  // Create transport for middleware                          
+      141 +  tr := &Transport{                                           
+      142 +    endpoint:    c.endpoint,                                  
+      143 +    operation:   operation,                                   
+      144 +    reqHeader:   make(headerCarrier),                         
+      145 +    replyHeader: make(headerCarrier),                         
+      146 +  }                                                           
+      147 +                                                              
+      148 +  // Inject client transport context                          
+      149    ctx = transport.NewClientContext(ctx, tr)                   
+      150                                                                
+      151    // Build handler                                            
+     ...
+      119        opt = append(opt, natsrpc.WithCallHeader(header))       
+      120      }                                                         
+      121                                                                
+      122 -    err := c.client.Invoke                                    
+          -(ctx, service, method, req, rep, opt...)                      
+      122 +    err := c.client.Request                                   
+          +(ctx, service, method, req, rep, opt...)                      
+      123      return rep, err                                           
+      124    }                                                           
+      125                                                                
+
+⏺ Bash(go build ./transport/nats/...) timeout: 1m 0s
+  ⎿  (No content)
+
+⏺ 构建成功！运行测试：
+
+⏺ Bash(go test ./transport/nats/... -v) timeout: 1m 0s
+  ⎿  Error: Exit code 1
+     # github.com/go-kratos/kratos/v2/transport/nats 
+     [github.com/go-kratos/kratos/v2/transport/nats.test]
+     transport/nats/server_test.go:137:2: declared and not used: called
+     transport/nats/server_test.go:145:16: cannot use mw (variable of type 
+     func(next func(context.Context, any) (any, error)) func(context.Context, 
+     any) (any, error)) as middleware.Middleware value in argument to srv.Use
+
+     FAIL	github.com/go-kratos/kratos/v2/transport/nats [build failed]
+     FAIL
+
+⏺ 修复测试文件中的问题：
+
+⏺ Update(transport/nats/server_test.go)
+  ⎿  Removed 2 lines                                                     
+      134  func TestServer_Use(t *testing.T) {                           
+      135    srv := NewServer()                                          
+      136                                                                
+      137 -  called := false                                             
+      137    mw := func(next func(context.Context, any) (any, error))    
+           func(context.Context, any) (any, error) {                     
+      138      return func(ctx context.Context, req any) (any, error) {  
+      139 -      called = true                                           
+      139        return next(ctx, req)                                   
+      140      }                                                         
+      141    }                                                           
+
+⏺ Bash(go test ./transport/nats/... -v) timeout: 1m 0s
+  ⎿  Error: Exit code 1
+     # github.com/go-kratos/kratos/v2/transport/nats 
+     [github.com/go-kratos/kratos/v2/transport/nats.test]
+     transport/nats/server_test.go:143:16: cannot use mw (variable of type 
+     func(next func(context.Context, any) (any, error)) func(context.Context, 
+     any) (any, error)) as middleware.Middleware value in argument to srv.Use
+
+     FAIL	github.com/go-kratos/kratos/v2/transport/nats [build failed]
+     FAIL
+
+⏺ Update(transport/nats/server_test.go)
+  ⎿  Added 1 line                                                        
+       6    "testing"                                                    
+       7    "time"                                                       
+       8                                                                 
+       9 +  "github.com/go-kratos/kratos/v2/middleware"                  
+      10    "github.com/go-kratos/kratos/v2/transport"                   
+      11  )                                                              
+      12                                                                 
+
+⏺ Update(transport/nats/server_test.go)
+  ⎿  Added 1 line, removed 1 line                                        
+      135  func TestServer_Use(t *testing.T) {                           
+      136    srv := NewServer()                                          
+      137                                                                
+      138 -  mw := func(next func(context.Context, any) (any, error))    
+          -func(context.Context, any) (any, error) {                     
+      138 +  mw := func(next middleware.Handler) middleware.Handler {    
+      139      return func(ctx context.Context, req any) (any, error) {  
+      140        return next(ctx, req)                                   
+      141      }                                                         
+
+⏺ Bash(go test ./transport/nats/... -v) timeout: 1m 0s
+  ⎿  === RUN   TestTransport_Kind        
+     --- PASS: TestTransport_Kind (0.00s)
+     === RUN   TestTransport_Endpoint
+     … +19 lines (ctrl+o to expand)
+
+⏺ 所有测试通过！
+
+⏺ NATS RPC Transport 实现已完成！以下是创建的文件和修改：
+
+  完成的工作
+
+  修改的文件：
+  - transport/transport.go - 添加了 KindNATS 常量
+
+  新创建的文件：
+  transport/nats/
+  ├── transport.go   # Transport 结构体，实现 transport.Transporter 接口
+  ├── options.go     # Server/Client 配置选项
+  ├── server.go      # Server 适配器，实现 transport.Server 和 Endpointer
+  ├── client.go      # Client 适配器，实现 natsrpc.ClientInterface
+  └── server_test.go # 单元测试
+
+  使用示例
+
+  Server 端：
+  import (
+      "github.com/go-kratos/kratos/v2"
+      "github.com/go-kratos/kratos/v2/transport/nats"
+      "github.com/go-kratos/kratos/v2/middleware/recovery"
+  )
+
+  func main() {
+      natsSrv := nats.NewServer(
+          nats.Address("nats://localhost:4222"),
+          nats.Namespace("myapp"),
+          nats.Middleware(recovery.Recovery()),
+      )
+
+      // 使用 natsrpc 生成的代码注册服务
+      example.RegisterGreetingNRServer(natsSrv, &GreeterService{})
+
+      app := kratos.New(kratos.Server(natsSrv))
+      app.Run()
+  }
+
+  Client 端：
+  import "github.com/go-kratos/kratos/v2/transport/nats"
+
+  func main() {
+      client, _ := nats.Dial(context.Background(),
+          nats.WithEndpoint("nats://localhost:4222"),
+          nats.WithNamespace("myapp"),
+      )
+      defer client.Close()
+
+      greeter := example.NewGreetingNRClient(client)
+      reply, _ := greeter.Hello(ctx, &example.HelloRequest{Name: "kratos"})
+  }
+
+  关键特性
+
+  - 实现 transport.Server 接口，可作为 Kratos app 的 Server 组件
+  - 支持 Kratos middleware 链
+  - 支持自动连接管理或使用现有 NATS 连接
+  - 支持 namespace 隔离
+  - 完整的 header 传递
+
+> /cost 
+  ⎿  Total cost:            $2.87
+     Total duration (API):  6m 50s
+     Total duration (wall): 22m 52s
+     Total code changes:    1005 lines added, 6 lines removed
+     Usage by model:
+         claude-3-5-haiku:  13.0k input, 965 output, 0 cache read, 0 cache write ($0.0143)
+          claude-opus-4-5:  1.4k input, 24.8k output, 3.2m cache read, 100.3k cache write ($2.85)
+
+
+

@@ -65,6 +65,7 @@ func (k Kind) String() string { return string(k) }
 const (
 	KindGRPC Kind = "grpc"
 	KindHTTP Kind = "http"
+	KindNATS Kind = "nats"
 )
 
 type (
