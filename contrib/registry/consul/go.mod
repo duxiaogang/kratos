@@ -1,6 +1,6 @@
 module github.com/go-kratos/kratos/contrib/registry/consul/v2
 
-go 1.22
+go 1.23.0
 
 require (
 	github.com/go-kratos/kratos/v2 v2.9.2
@@ -23,7 +23,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 )
 
 replace github.com/go-kratos/kratos/v2 => ../../../
