@@ -33,6 +33,7 @@ type Server struct {
 	errorHandler    func(interface{})
 	recoveryHandler func(interface{})
 	natsOpts        []nats.Option
+	encoder         interface{}
 	baseCtx         context.Context
 }
 
@@ -54,6 +55,41 @@ func NewServer(opts ...ServerOption) *Server {
 		o(srv)
 	}
 	return srv
+}
+
+// init initializes the NATS connection and server if not already done.
+func (s *Server) init() error {
+	if s.server != nil {
+		return nil
+	}
+
+	// Create NATS connection if not provided
+	if s.conn == nil {
+		conn, err := nats.Connect(s.address, s.natsOpts...)
+		if err != nil {
+			return fmt.Errorf("[NATS] failed to connect: %w", err)
+		}
+		s.conn = conn
+		s.ownConn = true
+	}
+
+	// Create natsrpc server
+	serverOpts := []natsrpc.ServerOption{
+		natsrpc.WithErrorHandler(s.errorHandler),
+		natsrpc.WithServerRecovery(s.recoveryHandler),
+	}
+	if s.encoder != nil {
+		if enc, ok := s.encoder.(natsrpc.Encoder); ok {
+			serverOpts = append(serverOpts, natsrpc.WithServerEncoder(enc))
+		}
+	}
+	server, err := natsrpc.NewServer(s.conn, serverOpts...)
+	if err != nil {
+		return fmt.Errorf("[NATS] failed to create server: %w", err)
+	}
+	s.server = server
+
+	return nil
 }
 
 // Use uses a service middleware with selector.
@@ -90,26 +126,9 @@ func (s *Server) Endpoint() (*url.URL, error) {
 func (s *Server) Start(ctx context.Context) error {
 	s.baseCtx = ctx
 
-	// Create NATS connection if not provided
-	if s.conn == nil {
-		conn, err := nats.Connect(s.address, s.natsOpts...)
-		if err != nil {
-			return fmt.Errorf("[NATS] failed to connect: %w", err)
-		}
-		s.conn = conn
-		s.ownConn = true
+	if err := s.init(); err != nil {
+		return err
 	}
-
-	// Create natsrpc server
-	serverOpts := []natsrpc.ServerOption{
-		natsrpc.WithErrorHandler(s.errorHandler),
-		natsrpc.WithServerRecovery(s.recoveryHandler),
-	}
-	server, err := natsrpc.NewServer(s.conn, serverOpts...)
-	if err != nil {
-		return fmt.Errorf("[NATS] failed to create server: %w", err)
-	}
-	s.server = server
 
 	endpoint, _ := s.Endpoint()
 	log.Infof("[NATS] server listening on: %s", endpoint.String())
@@ -140,6 +159,11 @@ func (s *Server) Stop(ctx context.Context) error {
 // Register registers a service with the server.
 // This method implements natsrpc.ServiceRegistrar interface.
 func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
+	// Initialize server if not already done
+	if err := s.init(); err != nil {
+		return nil, err
+	}
+
 	// Add namespace option if set
 	if s.namespace != "" {
 		opts = append([]natsrpc.ServiceOption{natsrpc.WithServiceNamespace(s.namespace)}, opts...)

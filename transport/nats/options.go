@@ -77,6 +77,14 @@ func NatsOptions(opts ...nats.Option) ServerOption {
 	}
 }
 
+// Encoder with custom encoder.
+// Use ProtoEncoder for standard protobuf compatibility.
+func Encoder(enc interface{}) ServerOption {
+	return func(s *Server) {
+		s.encoder = enc
+	}
+}
+
 // ClientOption is a NATS client option.
 type ClientOption func(o *clientOptions)
 
@@ -87,6 +95,7 @@ type clientOptions struct {
 	ownConn   bool
 	namespace string
 	natsOpts  []nats.Option
+	encoder   interface{}
 }
 
 // WithEndpoint with client endpoint.
@@ -123,5 +132,13 @@ func WithNamespace(ns string) ClientOption {
 func WithNatsOptions(opts ...nats.Option) ClientOption {
 	return func(o *clientOptions) {
 		o.natsOpts = opts
+	}
+}
+
+// WithEncoder with custom encoder.
+// Use ProtoEncoder for standard protobuf compatibility.
+func WithEncoder(enc interface{}) ClientOption {
+	return func(o *clientOptions) {
+		o.encoder = enc
 	}
 }

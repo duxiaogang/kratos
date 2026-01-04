@@ -61,6 +61,11 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	if options.namespace != "" {
 		clientOpts = append(clientOpts, natsrpc.WithClientNamespace(options.namespace))
 	}
+	if options.encoder != nil {
+		if enc, ok := options.encoder.(natsrpc.Encoder); ok {
+			clientOpts = append(clientOpts, natsrpc.WithClientEncoder(enc))
+		}
+	}
 	c.client = natsrpc.NewClient(c.conn, clientOpts...)
 
 	return c, nil
@@ -79,6 +84,11 @@ func NewClient(conn *nats.Conn, opts ...ClientOption) *Client {
 	clientOpts := []natsrpc.ClientOption{}
 	if options.namespace != "" {
 		clientOpts = append(clientOpts, natsrpc.WithClientNamespace(options.namespace))
+	}
+	if options.encoder != nil {
+		if enc, ok := options.encoder.(natsrpc.Encoder); ok {
+			clientOpts = append(clientOpts, natsrpc.WithClientEncoder(enc))
+		}
 	}
 
 	return &Client{

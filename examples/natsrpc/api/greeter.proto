@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package api;
+
+option go_package = "github.com/go-kratos/kratos/v2/examples/natsrpc/api;api";
+
+import "natsrpc.proto";
+
+// Greeter service definition
+service Greeter {
+  // SayHello - request/response RPC
+  rpc SayHello (HelloRequest) returns (HelloReply);
+
+  // Notify - publish (no response)
+  rpc Notify (NotifyRequest) returns (Empty) {
+    option (natsrpc.publish) = true;
+  }
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}
+
+message NotifyRequest {
+  string content = 1;
+}
+
+message Empty {}
