@@ -43,7 +43,7 @@ func NewServer(opts ...ServerOption) *Server {
 		address:    nats.DefaultURL,
 		timeout:    5 * time.Second,
 		middleware: matcher.New(),
-		ownConn:    true,
+		//ownConn:    true,
 		errorHandler: func(i interface{}) {
 			log.Errorf("[NATS] error: %v", i)
 		},
@@ -119,6 +119,7 @@ func (s *Server) Endpoint() (*url.URL, error) {
 		q.Set("namespace", s.namespace)
 		u.RawQuery = q.Encode()
 	}
+	s.endpoint = u
 	return u, nil
 }
 
@@ -219,6 +220,7 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 	}
 }
 
+/*
 // GetServer returns the underlying natsrpc.Server.
 // This can be used for advanced configurations.
 func (s *Server) GetServer() *natsrpc.Server {
@@ -229,3 +231,4 @@ func (s *Server) GetServer() *natsrpc.Server {
 func (s *Server) GetConn() *nats.Conn {
 	return s.conn
 }
+*/

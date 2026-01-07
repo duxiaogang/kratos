@@ -37,10 +37,11 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	}
 
 	c := &Client{
-		endpoint:  options.endpoint,
-		timeout:   options.timeout,
-		namespace: options.namespace,
-		ownConn:   options.ownConn,
+		endpoint:   options.endpoint,
+		timeout:    options.timeout,
+		namespace:  options.namespace,
+		ownConn:    options.ownConn,
+		middleware: options.middleware,
 	}
 
 	// Use existing connection or create new one
@@ -71,6 +72,7 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
+/*
 // NewClient creates a NATS client with an existing connection.
 func NewClient(conn *nats.Conn, opts ...ClientOption) *Client {
 	options := &clientOptions{
@@ -100,6 +102,7 @@ func NewClient(conn *nats.Conn, opts ...ClientOption) *Client {
 		ownConn:   false,
 	}
 }
+*/
 
 // Publish publishes a message without waiting for response.
 // This method implements natsrpc.ClientInterface.
@@ -190,6 +193,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
+/*
 // GetClient returns the underlying natsrpc.Client.
 func (c *Client) GetClient() *natsrpc.Client {
 	return c.client
@@ -199,3 +203,4 @@ func (c *Client) GetClient() *natsrpc.Client {
 func (c *Client) GetConn() *nats.Conn {
 	return c.conn
 }
+*/

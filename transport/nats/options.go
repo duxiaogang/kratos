@@ -89,13 +89,14 @@ func Encoder(enc interface{}) ServerOption {
 type ClientOption func(o *clientOptions)
 
 type clientOptions struct {
-	endpoint  string
-	timeout   time.Duration
-	conn      *nats.Conn
-	ownConn   bool
-	namespace string
-	natsOpts  []nats.Option
-	encoder   interface{}
+	endpoint   string
+	timeout    time.Duration
+	conn       *nats.Conn
+	ownConn    bool
+	namespace  string
+	natsOpts   []nats.Option
+	encoder    interface{}
+	middleware []middleware.Middleware
 }
 
 // WithEndpoint with client endpoint.
@@ -140,5 +141,12 @@ func WithNatsOptions(opts ...nats.Option) ClientOption {
 func WithEncoder(enc interface{}) ClientOption {
 	return func(o *clientOptions) {
 		o.encoder = enc
+	}
+}
+
+// WithMiddleware with client middleware.
+func WithMiddleware(m ...middleware.Middleware) ClientOption {
+	return func(o *clientOptions) {
+		o.middleware = m
 	}
 }
