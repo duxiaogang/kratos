@@ -2,6 +2,8 @@ module github.com/go-kratos/kratos/v2
 
 go 1.23.0
 
+replace github.com/byebyebruce/natsrpc => github.com/duxiaogang/natsrpc v0.0.0-20260227063716-cb8983819569
+
 require (
 	dario.cat/mergo v1.0.0
 	github.com/byebyebruce/natsrpc v0.7.0
@@ -37,6 +39,7 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/panjf2000/ants/v2 v2.11.5 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.6 // indirect
