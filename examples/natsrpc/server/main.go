@@ -46,7 +46,7 @@ func main() {
 		nats.Namespace("example"),
 		nats.Encoder(nats.ProtoEncoder{}), // Use standard protobuf encoder
 		nats.Middleware(
-			recovery.Recovery(),
+			recovery.Recovery(), //todo: 重复了？
 			logging.Server(logger),
 		),
 	)
