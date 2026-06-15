@@ -18,11 +18,11 @@ func main() {
 	)
 	log.SetLogger(logger)
 
-	// Create NATS client
+	// Create NATS client.
+	// The standard protobuf encoder is the default, so no WithEncoder() option is needed.
 	client, err := nats.Dial(context.Background(),
 		nats.WithEndpoint("nats://localhost:4222"),
 		nats.WithNamespace("example"),
-		nats.WithEncoder(nats.ProtoEncoder{}), // Use standard protobuf encoder
 	)
 	if err != nil {
 		log.Fatalf("Failed to connect to NATS: %v", err)

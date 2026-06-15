@@ -14,12 +14,16 @@ import (
 
 var _ natsrpc.ClientInterface = (*Client)(nil)
 
-// Client is a NATS client wrapper.
+// Client is a NATS RPC transport client.
+//
+// NATS provides location transparency and in-group load balancing at the
+// broker level, so there is no selector/discovery resolver here as in the gRPC
+// transport: a client addresses a service by name and the broker routes it.
 type Client struct {
 	client     *natsrpc.Client
 	conn       *nats.Conn
-	endpoint   string
-	timeout    time.Duration
+	endpoint   string        //todo: 别叫endpoint了，叫address之类吧，endpoint中应该包含namespace/id
+	timeout    time.Duration //request timeout
 	namespace  string
 	ownConn    bool
 	middleware []middleware.Middleware
@@ -31,6 +35,7 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		endpoint: nats.DefaultURL,
 		timeout:  2 * time.Second,
 		ownConn:  true,
+		encoder:  ProtoEncoder{},
 	}
 	for _, o := range opts {
 		o(options)
@@ -44,12 +49,11 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		middleware: options.middleware,
 	}
 
-	// Use existing connection or create new one
 	if options.conn != nil {
 		c.conn = options.conn
 		c.ownConn = false
 	} else {
-		conn, err := nats.Connect(options.endpoint, options.natsOpts...)
+		conn, err := nats.Connect(options.endpoint, options.natsOpts...) //nats.Connect不使用ctx?
 		if err != nil {
 			return nil, fmt.Errorf("[NATS] failed to connect: %w", err)
 		}
@@ -57,150 +61,105 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		c.ownConn = true
 	}
 
-	// Create natsrpc client
-	clientOpts := []natsrpc.ClientOption{}
+	clientOpts := []natsrpc.ClientOption{
+		natsrpc.WithClientEncoder(options.encoder),
+	}
 	if options.namespace != "" {
 		clientOpts = append(clientOpts, natsrpc.WithClientNamespace(options.namespace))
-	}
-	if options.encoder != nil {
-		if enc, ok := options.encoder.(natsrpc.Encoder); ok {
-			clientOpts = append(clientOpts, natsrpc.WithClientEncoder(enc))
-		}
 	}
 	c.client = natsrpc.NewClient(c.conn, clientOpts...)
 
 	return c, nil
 }
 
-/*
-// NewClient creates a NATS client with an existing connection.
-func NewClient(conn *nats.Conn, opts ...ClientOption) *Client {
-	options := &clientOptions{
-		timeout: 2 * time.Second,
-		ownConn: false,
-	}
-	for _, o := range opts {
-		o(options)
-	}
-
-	clientOpts := []natsrpc.ClientOption{}
-	if options.namespace != "" {
-		clientOpts = append(clientOpts, natsrpc.WithClientNamespace(options.namespace))
-	}
-	if options.encoder != nil {
-		if enc, ok := options.encoder.(natsrpc.Encoder); ok {
-			clientOpts = append(clientOpts, natsrpc.WithClientEncoder(enc))
-		}
-	}
-
-	return &Client{
-		client:    natsrpc.NewClient(conn, clientOpts...),
-		conn:      conn,
-		endpoint:  conn.ConnectedUrl(),
-		timeout:   options.timeout,
-		namespace: options.namespace,
-		ownConn:   false,
-	}
-}
-*/
-
-// Publish publishes a message without waiting for response.
-// This method implements natsrpc.ClientInterface.
+// Publish publishes a message without waiting for a response.
+// It implements natsrpc.ClientInterface.
 func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc.CallOption) error {
-	// Build operation name
 	operation := fmt.Sprintf("/%s/%s", service, method)
-
-	// Create transport for middleware
 	tr := &Transport{
 		endpoint:    c.endpoint,
 		operation:   operation,
 		reqHeader:   make(headerCarrier),
 		replyHeader: make(headerCarrier),
 	}
-
-	// Inject client transport context
 	ctx := transport.NewClientContext(context.Background(), tr)
 
-	// Build handler
 	h := func(ctx context.Context, req any) (any, error) {
-		// Extract headers from transport and add to call options
-		header := make(map[string]string)
-		for _, k := range tr.reqHeader.Keys() {
-			header[k] = tr.reqHeader.Get(k)
-		}
-		if len(header) > 0 {
-			opt = append(opt, natsrpc.WithCallHeader(header))
-		}
-
-		return nil, c.client.Publish(service, method, req, opt...)
+		//todo: tr不要用捕获的，重新从ctx里拿
+		callOpts := c.withHeader(tr, opt)
+		return nil, c.client.Publish(service, method, req, callOpts...)
 	}
-
-	// Apply middleware
 	if len(c.middleware) > 0 {
 		h = middleware.Chain(c.middleware...)(h)
 	}
 
 	_, err := h(ctx, req)
-	return err
+	if err != nil {
+		return DecodeError(err.Error()) //todo: 所有error一定是来自server？也就是一定是encoded error?
+	}
+	return nil
 }
 
-// Request sends a request and waits for response.
-// This method implements natsrpc.ClientInterface.
+// Request sends a request and waits for the response.
+// It implements natsrpc.ClientInterface.
 func (c *Client) Request(ctx context.Context, service, method string, req interface{}, rep interface{}, opt ...natsrpc.CallOption) error {
-	// Build operation name
-	operation := fmt.Sprintf("/%s/%s", service, method)
+	// Apply the client timeout when the caller has not set a deadline.
+	if _, ok := ctx.Deadline(); !ok && c.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+	}
 
-	// Create transport for middleware
+	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
 		endpoint:    c.endpoint,
 		operation:   operation,
 		reqHeader:   make(headerCarrier),
 		replyHeader: make(headerCarrier),
 	}
-
-	// Inject client transport context
 	ctx = transport.NewClientContext(ctx, tr)
 
-	// Build handler
 	h := func(ctx context.Context, req any) (any, error) {
-		// Extract headers from transport and add to call options
-		header := make(map[string]string)
-		for _, k := range tr.reqHeader.Keys() {
-			header[k] = tr.reqHeader.Get(k)
-		}
-		if len(header) > 0 {
-			opt = append(opt, natsrpc.WithCallHeader(header))
-		}
-
-		err := c.client.Request(ctx, service, method, req, rep, opt...)
+		//todo: tr不要用捕获的，重新从ctx里拿
+		callOpts := c.withHeader(tr, opt)
+		err := c.client.Request(ctx, service, method, req, rep, callOpts...)
+		//todo: 这里是否也应该获取reply header？
 		return rep, err
 	}
-
-	// Apply middleware
 	if len(c.middleware) > 0 {
 		h = middleware.Chain(c.middleware...)(h)
 	}
 
 	_, err := h(ctx, req)
-	return err
+	if err != nil {
+		// Restore the structured Kratos error encoded by the server.
+		return DecodeError(err.Error()) //todo: 所有error一定是来自server？也就是一定是encoded error?
+	}
+	return nil
 }
 
-// Close closes the client connection.
+// withHeader builds the natsrpc call options for this invocation, appending any
+// headers that middleware wrote onto the transport. A fresh slice is returned
+// each call so retries never accumulate duplicate options.
+func (c *Client) withHeader(tr *Transport, base []natsrpc.CallOption) []natsrpc.CallOption {
+	keys := tr.reqHeader.Keys()
+	if len(keys) == 0 {
+		return base
+	}
+	header := make(map[string]string, len(keys))
+	for _, k := range keys {
+		header[k] = tr.reqHeader.Get(k)
+	}
+	out := make([]natsrpc.CallOption, 0, len(base)+1)
+	out = append(out, base...)
+	out = append(out, natsrpc.WithCallHeader(header))
+	return out
+}
+
+// Close closes the client connection if the client owns it.
 func (c *Client) Close() error {
 	if c.ownConn && c.conn != nil {
 		c.conn.Close()
 	}
 	return nil
 }
-
-/*
-// GetClient returns the underlying natsrpc.Client.
-func (c *Client) GetClient() *natsrpc.Client {
-	return c.client
-}
-
-// GetConn returns the underlying NATS connection.
-func (c *Client) GetConn() *nats.Conn {
-	return c.conn
-}
-*/

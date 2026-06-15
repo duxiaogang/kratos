@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/byebyebruce/natsrpc"
 	"github.com/nats-io/nats.go"
 
 	"github.com/go-kratos/kratos/v2/middleware"
@@ -78,8 +79,9 @@ func NatsOptions(opts ...nats.Option) ServerOption {
 }
 
 // Encoder with custom encoder.
-// Use ProtoEncoder for standard protobuf compatibility.
-func Encoder(enc interface{}) ServerOption {
+// Defaults to ProtoEncoder (standard google.golang.org/protobuf). Override only
+// when your generated messages use a different serialization.
+func Encoder(enc natsrpc.Encoder) ServerOption {
 	return func(s *Server) {
 		s.encoder = enc
 	}
@@ -90,12 +92,12 @@ type ClientOption func(o *clientOptions)
 
 type clientOptions struct {
 	endpoint   string
-	timeout    time.Duration
+	timeout    time.Duration //request timeout
 	conn       *nats.Conn
 	ownConn    bool
 	namespace  string
 	natsOpts   []nats.Option
-	encoder    interface{}
+	encoder    natsrpc.Encoder
 	middleware []middleware.Middleware
 }
 
@@ -137,8 +139,9 @@ func WithNatsOptions(opts ...nats.Option) ClientOption {
 }
 
 // WithEncoder with custom encoder.
-// Use ProtoEncoder for standard protobuf compatibility.
-func WithEncoder(enc interface{}) ClientOption {
+// Defaults to ProtoEncoder (standard google.golang.org/protobuf). Override only
+// when your generated messages use a different serialization.
+func WithEncoder(enc natsrpc.Encoder) ClientOption {
 	return func(o *clientOptions) {
 		o.encoder = enc
 	}

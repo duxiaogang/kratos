@@ -40,11 +40,11 @@ func main() {
 	)
 	log.SetLogger(logger)
 
-	// Create NATS server with middleware
+	// Create NATS server with middleware.
+	// The standard protobuf encoder is the default, so no Encoder() option is needed.
 	natsSrv := nats.NewServer(
 		nats.Address("nats://localhost:4222"),
 		nats.Namespace("example"),
-		nats.Encoder(nats.ProtoEncoder{}), // Use standard protobuf encoder
 		nats.Middleware(
 			recovery.Recovery(), //todo: 重复了？
 			logging.Server(logger),

@@ -8,8 +8,8 @@ var _ transport.Transporter = (*Transport)(nil)
 
 // Transport is a NATS transport.
 type Transport struct {
-	endpoint    string
-	operation   string
+	endpoint    string //namespace.service.id
+	operation   string //method
 	reqHeader   headerCarrier
 	replyHeader headerCarrier
 }
