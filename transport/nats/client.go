@@ -22,7 +22,6 @@ var _ natsrpc.ClientInterface = (*Client)(nil)
 type Client struct {
 	client     *natsrpc.Client
 	conn       *nats.Conn
-	endpoint   string        //todo: 别叫endpoint了，叫address之类吧，endpoint中应该包含namespace/id
 	timeout    time.Duration //request timeout
 	namespace  string
 	ownConn    bool
@@ -32,17 +31,16 @@ type Client struct {
 // Dial 创建一个 NATS 客户端连接。
 func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	options := &clientOptions{
-		endpoint: nats.DefaultURL,
-		timeout:  2 * time.Second,
-		ownConn:  true,
-		encoder:  ProtoEncoder{},
+		address: nats.DefaultURL,
+		timeout: 2 * time.Second,
+		ownConn: true,
+		encoder: ProtoEncoder{},
 	}
 	for _, o := range opts {
 		o(options)
 	}
 
 	c := &Client{
-		endpoint:   options.endpoint,
 		timeout:    options.timeout,
 		namespace:  options.namespace,
 		ownConn:    options.ownConn,
@@ -53,7 +51,7 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		c.conn = options.conn
 		c.ownConn = false
 	} else {
-		conn, err := nats.Connect(options.endpoint, options.natsOpts...) //nats.Connect不使用ctx?
+		conn, err := nats.Connect(options.address, options.natsOpts...) //nats.Connect不使用ctx?
 		if err != nil {
 			return nil, fmt.Errorf("[NATS] failed to connect: %w", err)
 		}

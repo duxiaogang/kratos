@@ -101,7 +101,7 @@ func Encoder(enc natsrpc.Encoder) ServerOption {
 type ClientOption func(o *clientOptions)
 
 type clientOptions struct {
-	endpoint   string
+	address    string
 	timeout    time.Duration //请求超时时间
 	conn       *nats.Conn
 	ownConn    bool
@@ -111,11 +111,19 @@ type clientOptions struct {
 	middleware []middleware.Middleware
 }
 
-// WithEndpoint 设置客户端 endpoint。
-func WithEndpoint(endpoint string) ClientOption {
+// WithAddress 设置客户端连接的 NATS 服务端地址（如 nats://localhost:4222）。
+func WithAddress(address string) ClientOption {
 	return func(o *clientOptions) {
-		o.endpoint = endpoint
+		o.address = address
 	}
+}
+
+// WithEndpoint 设置客户端连接的 NATS 服务端地址。
+//
+// Deprecated: 这里存的是 NATS broker 地址，与 Kratos 的 endpoint（含
+// namespace/id 的服务端点）概念不同，名字有误导。请改用 WithAddress。
+func WithEndpoint(endpoint string) ClientOption {
+	return WithAddress(endpoint)
 }
 
 // WithTimeout 设置客户端超时时间。

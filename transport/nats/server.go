@@ -41,7 +41,7 @@ type pendingService struct {
 type Server struct {
 	server     *natsrpc.Server
 	conn       *nats.Conn
-	endpoint   *url.URL
+	endpoint   *url.URL //fixme: 这个目前没意义
 	address    string
 	timeout    time.Duration //业务handler timeout
 	middleware matcher.Matcher

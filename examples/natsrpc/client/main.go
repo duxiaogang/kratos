@@ -21,7 +21,7 @@ func main() {
 	// Create NATS client.
 	// The standard protobuf encoder is the default, so no WithEncoder() option is needed.
 	client, err := nats.Dial(context.Background(),
-		nats.WithEndpoint("nats://localhost:4222"),
+		nats.WithAddress("nats://localhost:4222"),
 		nats.WithNamespace("example"),
 	)
 	if err != nil {
