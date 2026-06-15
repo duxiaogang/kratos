@@ -26,7 +26,7 @@ func TestEncodeDecodeError_RoundTrip(t *testing.T) {
 }
 
 func TestDecodeError_NonJSONFallback(t *testing.T) {
-	// A raw transport error (e.g. nats timeout) is not Status JSON.
+	// 原始的 transport 错误（例如 nats 超时）不是 Status JSON。
 	err := DecodeError("nats: timeout")
 	ke := kratoserrors.FromError(err)
 	if int(ke.Code) != kratoserrors.UnknownCode {

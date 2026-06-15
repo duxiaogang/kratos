@@ -6,7 +6,7 @@ import (
 
 var _ transport.Transporter = (*Transport)(nil)
 
-// Transport is a NATS transport.
+// Transport 是 NATS transport。
 type Transport struct {
 	endpoint    string //namespace.service.id
 	operation   string //method
@@ -14,50 +14,50 @@ type Transport struct {
 	replyHeader headerCarrier
 }
 
-// Kind returns the transport kind.
+// Kind 返回 transport 的类型。
 func (tr *Transport) Kind() transport.Kind {
 	return transport.KindNATS
 }
 
-// Endpoint returns the transport endpoint.
+// Endpoint 返回 transport 的 endpoint。
 func (tr *Transport) Endpoint() string {
 	return tr.endpoint
 }
 
-// Operation returns the transport operation.
+// Operation 返回 transport 的 operation。
 func (tr *Transport) Operation() string {
 	return tr.operation
 }
 
-// RequestHeader returns the request header.
+// RequestHeader 返回请求 header。
 func (tr *Transport) RequestHeader() transport.Header {
 	return tr.reqHeader
 }
 
-// ReplyHeader returns the reply header.
+// ReplyHeader 返回响应 header。
 func (tr *Transport) ReplyHeader() transport.Header {
 	return tr.replyHeader
 }
 
-// headerCarrier is a NATS header carrier.
+// headerCarrier 是一个 NATS header 载体。
 type headerCarrier map[string]string
 
-// Get returns the value associated with the passed key.
+// Get 返回与所传 key 关联的值。
 func (hc headerCarrier) Get(key string) string {
 	return hc[key]
 }
 
-// Set stores the key-value pair.
+// Set 存储 key-value 键值对。
 func (hc headerCarrier) Set(key string, value string) {
 	hc[key] = value
 }
 
-// Add append value to key-values pair.
+// Add 向 key-value 键值对追加值。
 func (hc headerCarrier) Add(key string, value string) {
 	hc[key] = value
 }
 
-// Keys lists the keys stored in this carrier.
+// Keys 列出该载体中存储的所有 key。
 func (hc headerCarrier) Keys() []string {
 	keys := make([]string, 0, len(hc))
 	for k := range hc {
@@ -66,7 +66,7 @@ func (hc headerCarrier) Keys() []string {
 	return keys
 }
 
-// Values returns a slice of values associated with the passed key.
+// Values 返回与所传 key 关联的值的切片。
 func (hc headerCarrier) Values(key string) []string {
 	if v, ok := hc[key]; ok {
 		return []string{v}

@@ -14,11 +14,11 @@ import (
 
 var _ natsrpc.ClientInterface = (*Client)(nil)
 
-// Client is a NATS RPC transport client.
+// Client 是 NATS RPC 传输层客户端。
 //
-// NATS provides location transparency and in-group load balancing at the
-// broker level, so there is no selector/discovery resolver here as in the gRPC
-// transport: a client addresses a service by name and the broker routes it.
+// NATS 在 broker 层提供了位置透明性以及组内的负载均衡，因此这里不像 gRPC
+// 传输层那样有 selector/discovery 解析器：客户端按服务名寻址，由 broker
+// 负责路由。
 type Client struct {
 	client     *natsrpc.Client
 	conn       *nats.Conn
@@ -29,7 +29,7 @@ type Client struct {
 	middleware []middleware.Middleware
 }
 
-// Dial creates a NATS client connection.
+// Dial 创建一个 NATS 客户端连接。
 func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	options := &clientOptions{
 		endpoint: nats.DefaultURL,
@@ -72,8 +72,8 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// Publish publishes a message without waiting for a response.
-// It implements natsrpc.ClientInterface.
+// Publish 发布一条消息，不等待响应。
+// 它实现了 natsrpc.ClientInterface。
 func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc.CallOption) error {
 	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
@@ -100,10 +100,10 @@ func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc
 	return nil
 }
 
-// Request sends a request and waits for the response.
-// It implements natsrpc.ClientInterface.
+// Request 发送一个请求并等待响应。
+// 它实现了 natsrpc.ClientInterface。
 func (c *Client) Request(ctx context.Context, service, method string, req interface{}, rep interface{}, opt ...natsrpc.CallOption) error {
-	// Apply the client timeout when the caller has not set a deadline.
+	// 当调用方未设置 deadline 时，应用客户端的超时时间。
 	if _, ok := ctx.Deadline(); !ok && c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
@@ -132,15 +132,15 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 
 	_, err := h(ctx, req)
 	if err != nil {
-		// Restore the structured Kratos error encoded by the server.
+		// 还原服务端编码的结构化 Kratos 错误。
 		return DecodeError(err.Error()) //todo: 所有error一定是来自server？也就是一定是encoded error?
 	}
 	return nil
 }
 
-// withHeader builds the natsrpc call options for this invocation, appending any
-// headers that middleware wrote onto the transport. A fresh slice is returned
-// each call so retries never accumulate duplicate options.
+// withHeader 为本次调用构建 natsrpc 的 call options，并追加中间件写入到
+// transport 上的所有 header。每次调用都返回一个全新的 slice，因此重试时
+// 绝不会累积重复的 option。
 func (c *Client) withHeader(tr *Transport, base []natsrpc.CallOption) []natsrpc.CallOption {
 	keys := tr.reqHeader.Keys()
 	if len(keys) == 0 {
@@ -156,7 +156,7 @@ func (c *Client) withHeader(tr *Transport, base []natsrpc.CallOption) []natsrpc.
 	return out
 }
 
-// Close closes the client connection if the client owns it.
+// Close 在客户端拥有连接时关闭该连接。
 func (c *Client) Close() error {
 	if c.ownConn && c.conn != nil {
 		c.conn.Close()

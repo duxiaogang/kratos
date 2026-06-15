@@ -8,12 +8,12 @@ import (
 
 //todo: 莫名其妙
 
-// EncodeError serializes an error into a string carried back to the caller via
-// the natsrpc error header. Kratos errors are encoded as protojson of their
-// Status (code/reason/message/metadata) so the full error model survives the
-// round trip. Non-Kratos errors are converted via errors.FromError first.
+// EncodeError 把一个 error 序列化成字符串，通过 natsrpc 的 error header 回传
+// 给调用方。Kratos 错误会被编码为其 Status（code/reason/message/metadata）的
+// protojson，使完整的错误模型能够在往返过程中得以保留。非 Kratos 错误会先
+// 通过 errors.FromError 转换。
 //
-// If marshaling fails for any reason, it falls back to the plain error text.
+// 如果 marshal 因任何原因失败，则回退为普通的 error 文本。
 func EncodeError(err error) string {
 	if err == nil {
 		return ""
@@ -26,11 +26,10 @@ func EncodeError(err error) string {
 	return string(b)
 }
 
-// DecodeError reverses EncodeError on the client side. A string produced by
-// EncodeError is parsed back into a *errors.Error with code/reason/message/
-// metadata intact. Strings that are not valid Status JSON (e.g. a raw
-// "nats: timeout" from the transport) fall back to an unknown error carrying
-// the original text.
+// DecodeError 在客户端侧对 EncodeError 进行逆向操作。由 EncodeError 产生的
+// 字符串会被解析回带有完整 code/reason/message/metadata 的 *errors.Error。
+// 不是合法 Status JSON 的字符串（例如来自 transport 的原始 "nats: timeout"）
+// 会回退为携带原始文本的 unknown error。
 func DecodeError(s string) error {
 	if s == "" {
 		return nil

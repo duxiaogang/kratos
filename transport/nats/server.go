@@ -24,7 +24,7 @@ var (
 	_ natsrpc.ServiceRegistrar = (*Server)(nil)
 )
 
-// pendingService is a Register call deferred until Start.
+// pendingService 表示一次被延迟到 Start 时才真正执行的 Register 调用。
 type pendingService struct {
 	sd   natsrpc.ServiceDesc
 	svc  any
@@ -32,13 +32,12 @@ type pendingService struct {
 	ref  *serviceRef
 }
 
-// Server is a NATS RPC transport server.
+// Server 是 NATS RPC 传输层服务端。
 //
-// The underlying natsrpc.Server subscribes to NATS subjects the moment a
-// service is registered. To preserve Kratos lifecycle semantics — a server
-// only begins serving when Start runs, after the app is ready and before the
-// endpoint is announced to the registry — Register merely buffers descriptors
-// and the actual subscription happens in Start.
+// 底层的 natsrpc.Server 会在服务注册的那一刻立即订阅 NATS subject。为了
+// 保持 Kratos 的生命周期语义——服务端只在 Start 运行时（即 app 就绪之后、
+// endpoint 对外宣告到注册中心之前）才开始提供服务——Register 只负责缓存
+// 描述符，真正的订阅发生在 Start 中。
 type Server struct {
 	server     *natsrpc.Server
 	conn       *nats.Conn
@@ -63,7 +62,7 @@ type Server struct {
 	err     error //todo: 这个有什么用？
 }
 
-// NewServer creates a NATS RPC server by options.
+// NewServer 通过 options 创建一个 NATS RPC 服务端。
 func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
 		baseCtx:    context.Background(),
@@ -86,8 +85,8 @@ func NewServer(opts ...ServerOption) *Server {
 }
 
 // todo: 重写，莫名其妙的代码
-// connect establishes the NATS connection and the underlying natsrpc.Server.
-// It is idempotent. Caller must hold s.mu.
+// connect 建立 NATS 连接以及底层的 natsrpc.Server，该方法是幂等的。
+// 调用方必须持有 s.mu。
 func (s *Server) connect() error {
 	if s.server != nil || s.err != nil {
 		return s.err
@@ -114,7 +113,7 @@ func (s *Server) connect() error {
 	return nil
 }
 
-// Use uses a service middleware with selector.
+// Use 注册一个带 selector 的服务中间件。
 // selector:
 //   - '/*'
 //   - '/helloworld.v1.Greeter/*'
@@ -123,7 +122,7 @@ func (s *Server) Use(selector string, m ...middleware.Middleware) {
 	s.middleware.Add(selector, m...)
 }
 
-// Endpoint returns the real address to registry endpoint.
+// Endpoint 返回用于注册中心的真实地址。
 //
 //	nats://127.0.0.1:4222?namespace=myapp
 func (s *Server) Endpoint() (*url.URL, error) {
@@ -132,7 +131,7 @@ func (s *Server) Endpoint() (*url.URL, error) {
 	return s.buildEndpoint()
 }
 
-// buildEndpoint computes and caches the endpoint URL. Caller must hold s.mu.
+// buildEndpoint 计算并缓存 endpoint URL。调用方必须持有 s.mu。
 func (s *Server) buildEndpoint() (*url.URL, error) {
 	if s.endpoint != nil {
 		return s.endpoint, nil
@@ -151,12 +150,12 @@ func (s *Server) buildEndpoint() (*url.URL, error) {
 	return u, nil
 }
 
-// Register buffers a service descriptor; the actual NATS subscription is
-// created when Start runs. It implements natsrpc.ServiceRegistrar so generated
-// RegisterXxxNRServer functions can target this server directly.
+// Register 缓存一个服务描述符；真正的 NATS 订阅会在 Start 运行时创建。
+// 它实现了 natsrpc.ServiceRegistrar，因此生成的 RegisterXxxNRServer 函数
+// 可以直接以该服务端为目标。
 //
-// The returned ServiceInterface delegates to the real service once Start has
-// run. Registering after Start subscribes immediately.
+// 返回的 ServiceInterface 会在 Start 运行后委托给真实的服务。如果在 Start
+// 之后再注册，则会立即订阅。
 func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -175,9 +174,9 @@ func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.Servi
 	return ref, nil
 }
 
-// doRegister applies Kratos defaults (namespace, timeout, interceptor) then
-// registers the service. User-supplied opts are appended last so they win.
-// Caller must hold s.mu.
+// doRegister 先应用 Kratos 的默认设置（namespace、timeout、interceptor），
+// 然后注册服务。用户传入的 opts 追加在最后，因此优先级最高。
+// 调用方必须持有 s.mu。
 func (s *Server) doRegister(sd natsrpc.ServiceDesc, svc any, opts []natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
 	merged := make([]natsrpc.ServiceOption, 0, len(opts)+3)
 	if s.namespace != "" {
@@ -189,7 +188,7 @@ func (s *Server) doRegister(sd natsrpc.ServiceDesc, svc any, opts []natsrpc.Serv
 	return s.server.Register(sd, svc, merged...)
 }
 
-// Start connects, subscribes all registered services, then blocks until Stop.
+// Start 建立连接、订阅所有已注册的服务，然后阻塞直到 Stop。
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	s.baseCtx = ctx
@@ -217,8 +216,8 @@ func (s *Server) Start(ctx context.Context) error {
 
 	log.Infof("[NATS] server listening on: %s", endpoint.String())
 
-	// The app passes a context that is never canceled on shutdown; it stops
-	// servers by calling Stop, which closes quit to unblock us here.
+	// app 传入的 context 在关闭时永远不会被取消；它通过调用 Stop 来停止
+	// 服务端，Stop 会关闭 quit 从而在这里解除阻塞。
 	select {
 	case <-quit:
 	case <-ctx.Done():
@@ -226,7 +225,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the NATS server and unblocks Start.
+// Stop 停止 NATS 服务端并解除 Start 的阻塞。
 func (s *Server) Stop(ctx context.Context) error {
 	log.Info("[NATS] server stopping")
 
@@ -243,9 +242,9 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.started = false
 	s.mu.Unlock()
 
-	// natsrpc's Close flushes via FlushWithContext, which requires a deadline.
-	// The app may pass a context without one (stopTimeout defaults to 0), so
-	// ensure a deadline is present.
+	// natsrpc 的 Close 通过 FlushWithContext 来 flush，这要求带有 deadline。
+	// app 传入的 context 可能没有 deadline（stopTimeout 默认为 0），因此
+	// 这里确保一定带有 deadline。
 	if _, ok := ctx.Deadline(); !ok {
 		if timeout <= 0 {
 			timeout = 5 * time.Second
@@ -266,13 +265,13 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// interceptor bridges a natsrpc handler invocation into the Kratos middleware
-// chain, injects the server transport context, and encodes any returned error
-// so the full Kratos error model survives the round trip back to the caller.
+// interceptor 把一次 natsrpc handler 调用桥接到 Kratos 中间件链中，注入
+// 服务端 transport context，并对返回的 error 进行编码，使完整的 Kratos
+// 错误模型能够完整地回传给调用方。
 func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 	return func(ctx context.Context, method string, req interface{}, invoker natsrpc.Invoker) (interface{}, error) {
-		// Merge with the app base context so values (e.g. logger) propagate and
-		// app shutdown cancels in-flight handlers.
+		// 与 app 的 base context 合并，使其中的值（如 logger）得以传播，
+		// 并使 app 关闭时能取消处理中的 handler。
 		ctx, cancel := ic.Merge(ctx, s.baseCtx)
 		defer cancel()
 
@@ -304,9 +303,9 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 
 		reply, err := h(ctx, req)
 		if err != nil {
-			// Hand natsrpc an error whose text is the protojson-encoded Status;
-			// it goes into the _ns_error header and the client wrapper decodes
-			// it back into a full *errors.Error.
+			// 交给 natsrpc 一个其文本为 protojson 编码 Status 的 error；
+			// 它会被放进 _ns_error header，客户端的 wrapper 再把它解码
+			// 还原成完整的 *errors.Error。
 			return nil, errors.New(EncodeError(err))
 		}
 		//todo: reply header不返回给client？
@@ -314,8 +313,8 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 	}
 }
 
-// serviceRef is a handle to a registered service. Before Start it is a
-// placeholder; afterwards it delegates to the real natsrpc service.
+// serviceRef 是一个已注册服务的句柄。在 Start 之前它只是一个占位符；
+// 之后它会委托给真实的 natsrpc 服务。
 type serviceRef struct {
 	mu   sync.Mutex
 	name string
@@ -328,7 +327,7 @@ func (r *serviceRef) set(real natsrpc.ServiceInterface) {
 	r.mu.Unlock()
 }
 
-// Name returns the service name.
+// Name 返回服务名。
 func (r *serviceRef) Name() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -338,7 +337,7 @@ func (r *serviceRef) Name() string {
 	return r.name
 }
 
-// Close unsubscribes the service if it is active.
+// Close 在服务处于活跃状态时取消其订阅。
 func (r *serviceRef) Close() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -21,7 +21,7 @@ const (
 	testErrReason   = "ECHO_BAD_INPUT"
 )
 
-// echoServer is the natsrpc handler under test.
+// echoServer 是被测的 natsrpc handler。
 type echoServer struct{}
 
 func echoHandler(svc interface{}, ctx context.Context, req interface{}) (interface{}, error) {
@@ -30,7 +30,7 @@ func echoHandler(svc interface{}, ctx context.Context, req interface{}) (interfa
 		return nil, kratoserrors.BadRequest(testErrReason, "value must not be boom").
 			WithMetadata(map[string]string{"field": "value"})
 	}
-	// Echo back, and surface the incoming header so the test can assert propagation.
+	// 原样回显，并把收到的 header 透出，以便测试断言其是否被正确传播。
 	out := in.GetValue()
 	if tr, ok := transport.FromServerContext(ctx); ok {
 		if v := tr.RequestHeader().Get("x-echo"); v != "" {
@@ -53,7 +53,7 @@ var echoServiceDesc = natsrpc.ServiceDesc{
 	Metadata: "echo.proto",
 }
 
-// dialTestConn skips the test if no NATS server is reachable.
+// dialTestConn 在没有可达的 NATS 服务端时跳过测试。
 func dialTestConn(t *testing.T) *nats.Conn {
 	t.Helper()
 	conn, err := nats.Connect(nats.DefaultURL, nats.Timeout(500*time.Millisecond))
@@ -63,7 +63,7 @@ func dialTestConn(t *testing.T) *nats.Conn {
 	return conn
 }
 
-// startTestServer wires a Server sharing the given connection and runs it.
+// startTestServer 装配一个共享给定连接的 Server 并运行它。
 func startTestServer(t *testing.T, conn *nats.Conn, opts ...ServerOption) *Server {
 	t.Helper()
 	opts = append([]ServerOption{Connection(conn)}, opts...)
@@ -76,7 +76,7 @@ func startTestServer(t *testing.T, conn *nats.Conn, opts ...ServerOption) *Serve
 			t.Errorf("Start: %v", err)
 		}
 	}()
-	// Give Start a moment to subscribe before clients send.
+	// 在客户端发送请求前，给 Start 一点时间完成订阅。
 	waitFor(t, func() bool {
 		srv.mu.Lock()
 		defer srv.mu.Unlock()
@@ -188,7 +188,7 @@ func TestIntegration_HeaderPropagation(t *testing.T) {
 	srv := startTestServer(t, conn)
 	defer srv.Stop(context.Background())
 
-	// Client middleware writes a request header onto the transport.
+	// 客户端中间件向 transport 写入一个请求 header。
 	clientMW := func(next middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
 			if tr, ok := transport.FromClientContext(ctx); ok {
