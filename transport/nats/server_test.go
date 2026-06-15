@@ -24,6 +24,26 @@ func TestTransport_Endpoint(t *testing.T) {
 	}
 }
 
+func TestSubjectEndpoint(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []string
+		want  string
+	}{
+		{name: "namespace service id", parts: []string{"myapp", "helloworld.Greeter", "instance-1"}, want: "myapp.helloworld.Greeter.instance-1"},
+		{name: "empty id is skipped", parts: []string{"myapp", "helloworld.Greeter", ""}, want: "myapp.helloworld.Greeter"},
+		{name: "empty namespace is skipped", parts: []string{"", "helloworld.Greeter", "instance-1"}, want: "helloworld.Greeter.instance-1"},
+		{name: "service only", parts: []string{"", "helloworld.Greeter", ""}, want: "helloworld.Greeter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := subjectEndpoint(tt.parts...); got != tt.want {
+				t.Errorf("subjectEndpoint(%v) = %v, want %v", tt.parts, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTransport_Operation(t *testing.T) {
 	tr := &Transport{operation: "/helloworld.Greeter/SayHello"}
 	if tr.Operation() != "/helloworld.Greeter/SayHello" {

@@ -1,15 +1,30 @@
 package nats
 
 import (
+	"strings"
+
 	"github.com/go-kratos/kratos/v2/transport"
 )
 
 var _ transport.Transporter = (*Transport)(nil)
 
+// subjectEndpoint 按 namespace.service.id 拼出 transport endpoint，与 natsrpc
+// 真实订阅的 subject 保持一致。空段会被跳过，因此 id 为空时退化为
+// namespace.service。
+func subjectEndpoint(parts ...string) string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, ".")
+}
+
 // Transport 是 NATS transport。
 type Transport struct {
-	endpoint    string //namespace.service.id
-	operation   string //method
+	endpoint    string // namespace.service.id
+	operation   string // /service/method
 	reqHeader   headerCarrier
 	replyHeader headerCarrier
 }

@@ -77,7 +77,7 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc.CallOption) error {
 	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
-		endpoint:    c.endpoint,
+		endpoint:    subjectEndpoint(c.namespace, service),
 		operation:   operation,
 		reqHeader:   make(headerCarrier),
 		replyHeader: make(headerCarrier),
@@ -112,7 +112,7 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 
 	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
-		endpoint:    c.endpoint,
+		endpoint:    subjectEndpoint(c.namespace, service),
 		operation:   operation,
 		reqHeader:   make(headerCarrier),
 		replyHeader: make(headerCarrier),

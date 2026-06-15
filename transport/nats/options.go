@@ -57,6 +57,16 @@ func Namespace(ns string) ServerOption {
 	}
 }
 
+// ServiceID 设置服务实例 id。
+// 它会成为 NATS subject（namespace.service.id）以及 transport endpoint 的最后
+// 一段，用于在同一 namespace.service 下区分不同的服务实例。留空时 subject 和
+// endpoint 退化为 namespace.service。
+func ServiceID(id string) ServerOption {
+	return func(s *Server) {
+		s.id = id
+	}
+}
+
 // ErrorHandler 设置 error handler。
 func ErrorHandler(h func(interface{})) ServerOption {
 	return func(s *Server) {

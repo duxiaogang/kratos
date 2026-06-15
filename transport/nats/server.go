@@ -46,6 +46,7 @@ type Server struct {
 	timeout    time.Duration //业务handler timeout
 	middleware matcher.Matcher
 	namespace  string
+	id         string
 	ownConn    bool
 	encoder    natsrpc.Encoder
 
@@ -178,9 +179,12 @@ func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.Servi
 // 然后注册服务。用户传入的 opts 追加在最后，因此优先级最高。
 // 调用方必须持有 s.mu。
 func (s *Server) doRegister(sd natsrpc.ServiceDesc, svc any, opts []natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
-	merged := make([]natsrpc.ServiceOption, 0, len(opts)+3)
+	merged := make([]natsrpc.ServiceOption, 0, len(opts)+4)
 	if s.namespace != "" {
 		merged = append(merged, natsrpc.WithServiceNamespace(s.namespace))
+	}
+	if s.id != "" {
+		merged = append(merged, natsrpc.WithServiceID(s.id))
 	}
 	merged = append(merged, natsrpc.WithServiceTimeout(s.timeout))
 	merged = append(merged, natsrpc.WithServiceInterceptor(s.interceptor(sd.ServiceName)))
@@ -282,12 +286,8 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 			reqHeader = make(map[string]string)
 		}
 
-		var ep string
-		if s.endpoint != nil {
-			ep = s.endpoint.String()
-		}
 		tr := &Transport{
-			endpoint:    ep,
+			endpoint:    subjectEndpoint(s.namespace, serviceName, s.id),
 			operation:   operation,
 			reqHeader:   headerCarrier(reqHeader),
 			replyHeader: make(headerCarrier),
