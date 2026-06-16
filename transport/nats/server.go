@@ -295,17 +295,21 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 		}
 
 		reply, err := h(ctx, req)
+		// 把中间件写入 tr.ReplyHeader() 的内容下推到 natsrpc，由其随响应回传。
+		// 成功/失败两路都做，使业务错误也能携带 reply header。
+		if keys := tr.replyHeader.Keys(); len(keys) > 0 {
+			rh := make(map[string]string, len(keys))
+			for _, k := range keys {
+				rh[k] = tr.replyHeader.Get(k)
+			}
+			_ = natsrpc.SetReplyHeader(ctx, rh)
+		}
 		if err != nil {
 			// 交给 natsrpc 一个其文本为 protojson 编码 Status 的 error；
 			// 它会被放进 _ns_error header，客户端的 wrapper 再把它解码
 			// 还原成完整的 *errors.Error。
 			return nil, errors.New(EncodeError(err))
 		}
-		// 注意：natsrpc v0.7.0 无法把自定义 reply header 回传给客户端。
-		// 它在内部构造响应消息时只写入 error header（makeErrorHeader），
-		// interceptor 也没有任何途径往响应消息里追加 header。因此即便中间件
-		// 往 tr.ReplyHeader() 写入了内容，也无法送达客户端，这里只能丢弃。
-		// 若要支持，需要 natsrpc 在响应路径上提供携带 header 的能力。
 		return reply, nil
 	}
 }

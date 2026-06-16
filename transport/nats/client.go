@@ -119,11 +119,22 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 	ctx = transport.NewClientContext(ctx, tr)
 
 	h := func(ctx context.Context, req any) (any, error) {
-		callOpts := c.withHeader(transportFromClient(ctx), opt)
-		err := c.client.Request(ctx, service, method, req, rep, callOpts...)
-		// natsrpc v0.7.0 的 Request 只回传解码后的 rep，不暴露响应消息的
-		// header，因此这里无法把 reply header 填充到 tr.ReplyHeader()。
-		// 若要支持，需要 natsrpc 在客户端暴露响应消息的 header。
+		tr := transportFromClient(ctx)
+		callOpts := c.withHeader(tr, opt)
+		// 追加 reply header 容器。注意 withHeader 在无请求头时会原样返回入参
+		// slice，因此这里新建一份再 append，避免污染调用方传入的 opt。
+		var rh map[string]string
+		merged := make([]natsrpc.CallOption, 0, len(callOpts)+1)
+		merged = append(merged, callOpts...)
+		merged = append(merged, natsrpc.WithCallReplyHeader(&rh))
+
+		err := c.client.Request(ctx, service, method, req, rep, merged...)
+		// 把服务端回传的响应 header 填进 transport，供客户端中间件读取。
+		if len(rh) > 0 && tr != nil {
+			for k, v := range rh {
+				tr.replyHeader.Set(k, v)
+			}
+		}
 		return rep, err
 	}
 	if len(c.middleware) > 0 {

@@ -212,3 +212,97 @@ func TestIntegration_HeaderPropagation(t *testing.T) {
 		t.Errorf("reply = %q, want %q (header not propagated)", rep.GetValue(), "v|tag")
 	}
 }
+
+// TestIntegration_ReplyHeaderPropagation 验证服务端中间件写入的 reply header
+// 能回传到客户端中间件读取。
+func TestIntegration_ReplyHeaderPropagation(t *testing.T) {
+	conn := dialTestConn(t)
+	defer conn.Close()
+
+	// 服务端中间件在 handler 之后向 transport 写入一个 reply header。
+	serverMW := func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			reply, err := next(ctx, req)
+			if tr, ok := transport.FromServerContext(ctx); ok {
+				tr.ReplyHeader().Set("x-reply", "pong")
+			}
+			return reply, err
+		}
+	}
+	srv := startTestServer(t, conn, Middleware(serverMW))
+	defer srv.Stop(context.Background())
+
+	// 客户端中间件在调用返回后读取 reply header。
+	var gotReply string
+	clientMW := func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			reply, err := next(ctx, req)
+			if tr, ok := transport.FromClientContext(ctx); ok {
+				gotReply = tr.ReplyHeader().Get("x-reply")
+			}
+			return reply, err
+		}
+	}
+	cli, err := Dial(context.Background(), WithConnection(conn), WithMiddleware(clientMW))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer cli.Close()
+
+	rep := &wrapperspb.StringValue{}
+	if err := cli.Request(context.Background(), testServiceName, testMethod,
+		&wrapperspb.StringValue{Value: "v"}, rep); err != nil {
+		t.Fatalf("Request: %v", err)
+	}
+	if gotReply != "pong" {
+		t.Errorf("client reply header = %q, want %q (reply header not propagated)", gotReply, "pong")
+	}
+}
+
+// TestIntegration_ReplyHeaderOnError 验证业务错误与 reply header 共存：客户端
+// 既能还原 *errors.Error，又能读到服务端回传的 reply header。
+func TestIntegration_ReplyHeaderOnError(t *testing.T) {
+	conn := dialTestConn(t)
+	defer conn.Close()
+
+	serverMW := func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			reply, err := next(ctx, req)
+			if tr, ok := transport.FromServerContext(ctx); ok {
+				tr.ReplyHeader().Set("x-reply", "pong")
+			}
+			return reply, err
+		}
+	}
+	srv := startTestServer(t, conn, Middleware(serverMW))
+	defer srv.Stop(context.Background())
+
+	var gotReply string
+	clientMW := func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			reply, err := next(ctx, req)
+			if tr, ok := transport.FromClientContext(ctx); ok {
+				gotReply = tr.ReplyHeader().Get("x-reply")
+			}
+			return reply, err
+		}
+	}
+	cli, err := Dial(context.Background(), WithConnection(conn), WithMiddleware(clientMW))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer cli.Close()
+
+	rep := &wrapperspb.StringValue{}
+	err = cli.Request(context.Background(), testServiceName, testMethod,
+		&wrapperspb.StringValue{Value: "boom"}, rep)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if ke := kratoserrors.FromError(err); ke.Reason != testErrReason {
+		t.Errorf("reason = %q, want %q", ke.Reason, testErrReason)
+	}
+	if gotReply != "pong" {
+		t.Errorf("client reply header = %q, want %q (reply header lost on error path)", gotReply, "pong")
+	}
+}
