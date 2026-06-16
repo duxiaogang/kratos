@@ -94,7 +94,7 @@ func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc
 
 	_, err := h(ctx, req)
 	if err != nil {
-		return DecodeError(err.Error()) //todo: 所有error一定是来自server？也就是一定是encoded error?
+		return DecodeError(err.Error())
 	}
 	return nil
 }
@@ -133,7 +133,7 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 	_, err := h(ctx, req)
 	if err != nil {
 		// 还原服务端编码的结构化 Kratos 错误。
-		return DecodeError(err.Error()) //todo: 所有error一定是来自server？也就是一定是encoded error?
+		return DecodeError(err.Error())
 	}
 	return nil
 }

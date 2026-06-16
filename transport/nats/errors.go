@@ -6,7 +6,11 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 )
 
-//todo: 莫名其妙
+// 说明：errors.FromError 内部虽然 import 了 grpc/status，但 NATS 路径不受影响。
+// FromError 会先用 errors.As 拦截 *errors.Error 直接返回；只有非 Kratos 错误才
+// 会走 status.FromError 去「尝试」解析成 gRPC status，解析不了就回退为 unknown，
+// 对任意 error 都安全。而 NATS 的错误往返全程走 protojson（见下方 EncodeError/
+// DecodeError），不经过 grpc/status，那段只是历史兼容兜底。
 
 // EncodeError 把一个 error 序列化成字符串，通过 natsrpc 的 error header 回传
 // 给调用方。Kratos 错误会被编码为其 Status（code/reason/message/metadata）的
