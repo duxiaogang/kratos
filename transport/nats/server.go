@@ -301,7 +301,11 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 			// 还原成完整的 *errors.Error。
 			return nil, errors.New(EncodeError(err))
 		}
-		//todo: reply header不返回给client？
+		// 注意：natsrpc v0.7.0 无法把自定义 reply header 回传给客户端。
+		// 它在内部构造响应消息时只写入 error header（makeErrorHeader），
+		// interceptor 也没有任何途径往响应消息里追加 header。因此即便中间件
+		// 往 tr.ReplyHeader() 写入了内容，也无法送达客户端，这里只能丢弃。
+		// 若要支持，需要 natsrpc 在响应路径上提供携带 header 的能力。
 		return reply, nil
 	}
 }

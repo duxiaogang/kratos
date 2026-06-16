@@ -121,7 +121,9 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 		//todo: tr不要用捕获的，重新从ctx里拿
 		callOpts := c.withHeader(tr, opt)
 		err := c.client.Request(ctx, service, method, req, rep, callOpts...)
-		//todo: 这里是否也应该获取reply header？
+		// natsrpc v0.7.0 的 Request 只回传解码后的 rep，不暴露响应消息的
+		// header，因此这里无法把 reply header 填充到 tr.ReplyHeader()。
+		// 若要支持，需要 natsrpc 在客户端暴露响应消息的 header。
 		return rep, err
 	}
 	if len(c.middleware) > 0 {
