@@ -83,8 +83,9 @@ func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc
 	ctx := transport.NewClientContext(context.Background(), tr)
 
 	h := func(ctx context.Context, req any) (any, error) {
-		//todo: tr不要用捕获的，重新从ctx里拿
-		callOpts := c.withHeader(tr, opt)
+		// 从 ctx 重新取 transport，而不是用闭包捕获的 tr：中间件可能在
+		// 链路中替换掉 context 里的 transport，header 应以最终的为准。
+		callOpts := c.withHeader(transportFromClient(ctx), opt)
 		return nil, c.client.Publish(service, method, req, callOpts...)
 	}
 	if len(c.middleware) > 0 {
@@ -118,8 +119,7 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 	ctx = transport.NewClientContext(ctx, tr)
 
 	h := func(ctx context.Context, req any) (any, error) {
-		//todo: tr不要用捕获的，重新从ctx里拿
-		callOpts := c.withHeader(tr, opt)
+		callOpts := c.withHeader(transportFromClient(ctx), opt)
 		err := c.client.Request(ctx, service, method, req, rep, callOpts...)
 		// natsrpc v0.7.0 的 Request 只回传解码后的 rep，不暴露响应消息的
 		// header，因此这里无法把 reply header 填充到 tr.ReplyHeader()。
@@ -134,6 +134,15 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 	if err != nil {
 		// 还原服务端编码的结构化 Kratos 错误。
 		return DecodeError(err.Error()) //todo: 所有error一定是来自server？也就是一定是encoded error?
+	}
+	return nil
+}
+
+func transportFromClient(ctx context.Context) *Transport {
+	if tr, ok := transport.FromClientContext(ctx); ok {
+		if t, ok := tr.(*Transport); ok {
+			return t
+		}
 	}
 	return nil
 }
