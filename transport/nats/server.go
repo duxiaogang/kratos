@@ -60,7 +60,6 @@ type Server struct {
 	pending []*pendingService
 	started bool
 	quit    chan struct{}
-	err     error //todo: 这个有什么用？
 }
 
 // NewServer 通过 options 创建一个 NATS RPC 服务端。
@@ -85,18 +84,13 @@ func NewServer(opts ...ServerOption) *Server {
 	return srv
 }
 
-// todo: 重写，莫名其妙的代码
-// connect 建立 NATS 连接以及底层的 natsrpc.Server，该方法是幂等的。
-// 调用方必须持有 s.mu。
+// connect 建立 NATS 连接以及底层的 natsrpc.Server。
+// 该方法只在 Start 中调用一次；调用方必须持有 s.mu。
 func (s *Server) connect() error {
-	if s.server != nil || s.err != nil {
-		return s.err
-	}
 	if s.conn == nil {
 		conn, err := nats.Connect(s.address, s.natsOpts...)
 		if err != nil {
-			s.err = fmt.Errorf("[NATS] failed to connect: %w", err)
-			return s.err
+			return fmt.Errorf("[NATS] failed to connect: %w", err)
 		}
 		s.conn = conn
 		s.ownConn = true
@@ -107,8 +101,7 @@ func (s *Server) connect() error {
 		natsrpc.WithServerEncoder(s.encoder),
 	)
 	if err != nil {
-		s.err = fmt.Errorf("[NATS] failed to create server: %w", err)
-		return s.err
+		return fmt.Errorf("[NATS] failed to create server: %w", err)
 	}
 	s.server = server
 	return nil
