@@ -2,7 +2,7 @@ module github.com/go-kratos/kratos/v2
 
 go 1.23.0
 
-replace github.com/byebyebruce/natsrpc => github.com/duxiaogang/natsrpc v0.0.0-20260616081352-bc794ccb7ffa
+replace github.com/byebyebruce/natsrpc => github.com/duxiaogang/natsrpc v0.0.0-20260624070319-65bb4744d2ee
 
 require (
 	dario.cat/mergo v1.0.0
