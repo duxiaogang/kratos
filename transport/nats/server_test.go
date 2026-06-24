@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/byebyebruce/natsrpc"
+
 	"github.com/go-kratos/kratos/v2/middleware"
 	"github.com/go-kratos/kratos/v2/transport"
 )
@@ -149,6 +151,17 @@ func TestNewServer(t *testing.T) {
 	}
 	if srv.namespace != "test" {
 		t.Errorf("Server.namespace = %v, want %v", srv.namespace, "test")
+	}
+}
+
+func TestNewRegistrar(t *testing.T) {
+	srv := NewServer(Namespace("testns"))
+	ref, err := NewRegistrar(srv, ServiceID("instance-1")).Register(natsrpc.ServiceDesc{ServiceName: "test.Service"}, nil)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if got, want := ref.Name(), "testns.test.Service.instance-1"; got != want {
+		t.Errorf("service name = %q, want %q", got, want)
 	}
 }
 

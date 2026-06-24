@@ -75,6 +75,7 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc.CallOption) error {
 	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
+		// TODO: 客户端 endpoint 暂不包含 call id；后续等 natsrpc 代码生成支持后再显式传入 service id。
 		endpoint:    subjectEndpoint(c.namespace, service),
 		operation:   operation,
 		reqHeader:   make(headerCarrier),
@@ -111,6 +112,7 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 
 	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
+		// TODO: 客户端 endpoint 暂不包含 call id；后续等 natsrpc 代码生成支持后再显式传入 service id。
 		endpoint:    subjectEndpoint(c.namespace, service),
 		operation:   operation,
 		reqHeader:   make(headerCarrier),
@@ -162,6 +164,9 @@ func transportFromClient(ctx context.Context) *Transport {
 // transport 上的所有 header。每次调用都返回一个全新的 slice，因此重试时
 // 绝不会累积重复的 option。
 func (c *Client) withHeader(tr *Transport, base []natsrpc.CallOption) []natsrpc.CallOption {
+	if tr == nil {
+		return base
+	}
 	keys := tr.reqHeader.Keys()
 	if len(keys) == 0 {
 		return base

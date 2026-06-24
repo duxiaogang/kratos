@@ -13,6 +13,13 @@ import (
 // ServerOption 是 NATS 服务端的 option。
 type ServerOption func(o *Server)
 
+type registrarOptions struct {
+	serviceID string
+}
+
+// RegistrarOption 是单次服务注册的 option。
+type RegistrarOption func(o *registrarOptions)
+
 // Address 设置 NATS 服务端地址。
 func Address(addr string) ServerOption {
 	return func(s *Server) {
@@ -57,13 +64,11 @@ func Namespace(ns string) ServerOption {
 	}
 }
 
-// ServiceID 设置服务实例 id。
-// 它会成为 NATS subject（namespace.service.id）以及 transport endpoint 的最后
-// 一段，用于在同一 namespace.service 下区分不同的服务实例。留空时 subject 和
-// endpoint 退化为 namespace.service。
-func ServiceID(id string) ServerOption {
-	return func(s *Server) {
-		s.id = id
+// ServiceID 设置本次注册的服务实例 id。
+// 它会成为 NATS subject（namespace.service.id）以及 transport endpoint 的最后一段。
+func ServiceID(id string) RegistrarOption {
+	return func(o *registrarOptions) {
+		o.serviceID = id
 	}
 }
 

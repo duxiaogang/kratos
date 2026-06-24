@@ -119,6 +119,83 @@ func TestIntegration_RequestReply(t *testing.T) {
 	}
 }
 
+func TestIntegration_ServiceIDRouting(t *testing.T) {
+	conn := dialTestConn(t)
+	defer conn.Close()
+
+	const (
+		namespace = "kratos_nats_test_service_id"
+		serviceID = "echo-1"
+	)
+	wantServerEndpoint := subjectEndpoint(namespace, testServiceName, serviceID)
+	wantClientEndpoint := subjectEndpoint(namespace, testServiceName)
+
+	var serverEndpoint string
+	serverMW := func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			if tr, ok := transport.FromServerContext(ctx); ok {
+				serverEndpoint = tr.Endpoint()
+			}
+			return next(ctx, req)
+		}
+	}
+
+	srv := NewServer(Connection(conn), Namespace(namespace), Middleware(serverMW))
+	svc, err := NewRegistrar(srv, ServiceID(serviceID)).Register(echoServiceDesc, &echoServer{})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	go func() {
+		if err := srv.Start(context.Background()); err != nil {
+			t.Errorf("Start: %v", err)
+		}
+	}()
+	waitFor(t, func() bool {
+		srv.mu.Lock()
+		defer srv.mu.Unlock()
+		return srv.started
+	})
+	defer srv.Stop(context.Background())
+
+	var clientEndpoint string
+	clientMW := func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			if tr, ok := transport.FromClientContext(ctx); ok {
+				clientEndpoint = tr.Endpoint()
+			}
+			return next(ctx, req)
+		}
+	}
+	cli, err := Dial(
+		context.Background(),
+		WithConnection(conn),
+		WithNamespace(namespace),
+		WithMiddleware(clientMW),
+	)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer cli.Close()
+
+	rep := &wrapperspb.StringValue{}
+	if err := cli.Request(context.Background(), testServiceName, testMethod,
+		&wrapperspb.StringValue{Value: "hello"}, rep, natsrpc.WithCallID(serviceID)); err != nil {
+		t.Fatalf("Request: %v", err)
+	}
+	if rep.GetValue() != "hello" {
+		t.Errorf("reply = %q, want %q", rep.GetValue(), "hello")
+	}
+	if got := svc.Name(); got != wantServerEndpoint {
+		t.Errorf("service name = %q, want %q", got, wantServerEndpoint)
+	}
+	if serverEndpoint != wantServerEndpoint {
+		t.Errorf("server endpoint = %q, want %q", serverEndpoint, wantServerEndpoint)
+	}
+	if clientEndpoint != wantClientEndpoint {
+		t.Errorf("client endpoint = %q, want %q", clientEndpoint, wantClientEndpoint)
+	}
+}
+
 func TestIntegration_BusinessErrorRoundTrip(t *testing.T) {
 	conn := dialTestConn(t)
 	defer conn.Close()

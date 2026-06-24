@@ -16,6 +16,8 @@ import (
 	"github.com/go-kratos/kratos/v2/examples/natsrpc/api"
 )
 
+const greeterServiceID = "greeter-1"
+
 // GreeterService implements api.GreeterNRServer
 type GreeterService struct{}
 
@@ -51,8 +53,12 @@ func main() {
 		),
 	)
 
-	// Register greeter service
-	svc, err := api.RegisterGreeterNRServer(natsSrv, &GreeterService{})
+	// Register greeter service with a service id. The client should call it
+	// with natsrpc.WithCallID(greeterServiceID).
+	svc, err := api.RegisterGreeterNRServer(
+		nats.NewRegistrar(natsSrv, nats.ServiceID(greeterServiceID)),
+		&GreeterService{},
+	)
 	if err != nil {
 		log.Fatalf("Failed to register service: %v", err)
 	}

@@ -5,11 +5,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/byebyebruce/natsrpc"
+
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/transport/nats"
 
 	"github.com/go-kratos/kratos/v2/examples/natsrpc/api"
 )
+
+const greeterServiceID = "greeter-1"
 
 func main() {
 	logger := log.With(log.NewStdLogger(os.Stdout),
@@ -39,7 +43,7 @@ func main() {
 
 	reply, err := greeter.SayHello(ctx, &api.HelloRequest{
 		Name: "Kratos",
-	})
+	}, natsrpc.WithCallID(greeterServiceID))
 	if err != nil {
 		log.Fatalf("SayHello failed: %v", err)
 	}
@@ -49,7 +53,7 @@ func main() {
 	log.Info("Calling Notify...")
 	err = greeter.Notify(&api.NotifyRequest{
 		Content: "Hello from client!",
-	})
+	}, natsrpc.WithCallID(greeterServiceID))
 	if err != nil {
 		log.Fatalf("Notify failed: %v", err)
 	}

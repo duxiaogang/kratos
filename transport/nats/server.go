@@ -26,10 +26,11 @@ var (
 
 // pendingService 表示一次被延迟到 Start 时才真正执行的 Register 调用。
 type pendingService struct {
-	sd   natsrpc.ServiceDesc
-	svc  any
-	opts []natsrpc.ServiceOption
-	ref  *serviceRef
+	sd        natsrpc.ServiceDesc
+	svc       any
+	serviceID string
+	opts      []natsrpc.ServiceOption
+	ref       *serviceRef
 }
 
 // Server 是 NATS RPC 传输层服务端。
@@ -46,7 +47,6 @@ type Server struct {
 	timeout    time.Duration //业务handler timeout
 	middleware matcher.Matcher
 	namespace  string
-	id         string
 	ownConn    bool
 	encoder    natsrpc.Encoder
 
@@ -60,6 +60,34 @@ type Server struct {
 	pending []*pendingService
 	started bool
 	quit    chan struct{}
+}
+
+// Registrar 为一次或一组服务注册携带注册级配置。
+type Registrar struct {
+	srv       *Server
+	serviceID string
+}
+
+var _ natsrpc.ServiceRegistrar = (*Registrar)(nil)
+
+// NewRegistrar 基于 Server 创建一个带注册级配置的 service registrar。
+func NewRegistrar(srv *Server, opts ...RegistrarOption) *Registrar {
+	options := registrarOptions{}
+	for _, o := range opts {
+		o(&options)
+	}
+	return &Registrar{
+		srv:       srv,
+		serviceID: options.serviceID,
+	}
+}
+
+// Register 注册一个带 registrar 配置的服务。
+func (r *Registrar) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
+	if r == nil || r.srv == nil {
+		return nil, errors.New("[NATS] nil registrar")
+	}
+	return r.srv.register(sd, svc, r.serviceID, opts...)
 }
 
 // NewServer 通过 options 创建一个 NATS RPC 服务端。
@@ -151,12 +179,16 @@ func (s *Server) buildEndpoint() (*url.URL, error) {
 // 返回的 ServiceInterface 会在 Start 运行后委托给真实的服务。如果在 Start
 // 之后再注册，则会立即订阅。
 func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
+	return s.register(sd, svc, "", opts...)
+}
+
+func (s *Server) register(sd natsrpc.ServiceDesc, svc any, serviceID string, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ref := &serviceRef{name: sd.ServiceName}
+	ref := &serviceRef{name: subjectEndpoint(s.namespace, sd.ServiceName, serviceID)}
 	if s.started {
-		real, err := s.doRegister(sd, svc, opts)
+		real, err := s.doRegister(sd, svc, serviceID, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -164,24 +196,29 @@ func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.Servi
 		return ref, nil
 	}
 
-	s.pending = append(s.pending, &pendingService{sd: sd, svc: svc, opts: opts, ref: ref})
+	s.pending = append(s.pending, &pendingService{sd: sd, svc: svc, serviceID: serviceID, opts: opts, ref: ref})
 	return ref, nil
 }
 
-// doRegister 先应用 Kratos 的默认设置（namespace、timeout、interceptor），
-// 然后注册服务。用户传入的 opts 追加在最后，因此优先级最高。
+// doRegister 先应用 Kratos 的默认设置，然后注册服务。
+// namespace 和 serviceID 由 wrapper 统一管理，保证真实 subject 与 transport endpoint 一致。
 // 调用方必须持有 s.mu。
-func (s *Server) doRegister(sd natsrpc.ServiceDesc, svc any, opts []natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
+func (s *Server) doRegister(
+	sd natsrpc.ServiceDesc,
+	svc any,
+	serviceID string,
+	opts []natsrpc.ServiceOption,
+) (natsrpc.ServiceInterface, error) {
 	merged := make([]natsrpc.ServiceOption, 0, len(opts)+4)
+	merged = append(merged, natsrpc.WithServiceTimeout(s.timeout))
+	merged = append(merged, natsrpc.WithServiceInterceptor(s.interceptor(sd.ServiceName, serviceID)))
+	merged = append(merged, opts...)
 	if s.namespace != "" {
 		merged = append(merged, natsrpc.WithServiceNamespace(s.namespace))
 	}
-	if s.id != "" {
-		merged = append(merged, natsrpc.WithServiceID(s.id))
+	if serviceID != "" {
+		merged = append(merged, natsrpc.WithServiceID(serviceID))
 	}
-	merged = append(merged, natsrpc.WithServiceTimeout(s.timeout))
-	merged = append(merged, natsrpc.WithServiceInterceptor(s.interceptor(sd.ServiceName)))
-	merged = append(merged, opts...)
 	return s.server.Register(sd, svc, merged...)
 }
 
@@ -194,7 +231,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 	for _, p := range s.pending {
-		real, err := s.doRegister(p.sd, p.svc, p.opts)
+		real, err := s.doRegister(p.sd, p.svc, p.serviceID, p.opts)
 		if err != nil {
 			s.mu.Unlock()
 			return err
@@ -265,7 +302,7 @@ func (s *Server) Stop(ctx context.Context) error {
 // interceptor 把一次 natsrpc handler 调用桥接到 Kratos 中间件链中，注入
 // 服务端 transport context，并对返回的 error 进行编码，使完整的 Kratos
 // 错误模型能够完整地回传给调用方。
-func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
+func (s *Server) interceptor(serviceName, serviceID string) natsrpc.Interceptor {
 	return func(ctx context.Context, method string, req interface{}, invoker natsrpc.Invoker) (interface{}, error) {
 		// 与 app 的 base context 合并，使其中的值（如 logger）得以传播，
 		// 并使 app 关闭时能取消处理中的 handler。
@@ -280,7 +317,7 @@ func (s *Server) interceptor(serviceName string) natsrpc.Interceptor {
 		}
 
 		tr := &Transport{
-			endpoint:    subjectEndpoint(s.namespace, serviceName, s.id),
+			endpoint:    subjectEndpoint(s.namespace, serviceName, serviceID),
 			operation:   operation,
 			reqHeader:   headerCarrier(reqHeader),
 			replyHeader: make(headerCarrier),
