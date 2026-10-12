@@ -54,6 +54,7 @@ func (tr *Transport) ReplyHeader() transport.Header {
 	return tr.replyHeader
 }
 
+// fixme: 不支持数组，没有完全实现Header
 // headerCarrier 是一个 NATS header 载体。
 type headerCarrier map[string]string
 

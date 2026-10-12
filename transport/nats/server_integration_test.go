@@ -141,7 +141,7 @@ func TestIntegration_ServiceIDRouting(t *testing.T) {
 	}
 
 	srv := NewServer(Connection(conn), Namespace(namespace), Middleware(serverMW))
-	svc, err := NewRegistrar(srv, ServiceID(serviceID)).Register(echoServiceDesc, &echoServer{})
+	svc, err := srv.Register(echoServiceDesc, &echoServer{}, natsrpc.WithServiceID(serviceID))
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}

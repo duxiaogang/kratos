@@ -154,9 +154,13 @@ func TestNewServer(t *testing.T) {
 	}
 }
 
-func TestNewRegistrar(t *testing.T) {
+func TestServerRegisterServiceID(t *testing.T) {
 	srv := NewServer(Namespace("testns"))
-	ref, err := NewRegistrar(srv, ServiceID("instance-1")).Register(natsrpc.ServiceDesc{ServiceName: "test.Service"}, nil)
+	ref, err := srv.Register(
+		natsrpc.ServiceDesc{ServiceName: "test.Service"},
+		nil,
+		natsrpc.WithServiceID("instance-1"),
+	)
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}

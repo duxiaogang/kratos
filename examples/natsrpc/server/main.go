@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/byebyebruce/natsrpc"
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/middleware/logging"
@@ -56,8 +57,9 @@ func main() {
 	// Register greeter service with a service id. The client should call it
 	// with natsrpc.WithCallID(greeterServiceID).
 	svc, err := api.RegisterGreeterNRServer(
-		nats.NewRegistrar(natsSrv, nats.ServiceID(greeterServiceID)),
+		natsSrv,
 		&GreeterService{},
+		natsrpc.WithServiceID(greeterServiceID),
 	)
 	if err != nil {
 		log.Fatalf("Failed to register service: %v", err)

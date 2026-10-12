@@ -62,34 +62,6 @@ type Server struct {
 	quit    chan struct{}
 }
 
-// Registrar 为一次或一组服务注册携带注册级配置。
-type Registrar struct {
-	srv       *Server
-	serviceID string
-}
-
-var _ natsrpc.ServiceRegistrar = (*Registrar)(nil)
-
-// NewRegistrar 基于 Server 创建一个带注册级配置的 service registrar。
-func NewRegistrar(srv *Server, opts ...RegistrarOption) *Registrar {
-	options := registrarOptions{}
-	for _, o := range opts {
-		o(&options)
-	}
-	return &Registrar{
-		srv:       srv,
-		serviceID: options.serviceID,
-	}
-}
-
-// Register 注册一个带 registrar 配置的服务。
-func (r *Registrar) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
-	if r == nil || r.srv == nil {
-		return nil, errors.New("[NATS] nil registrar")
-	}
-	return r.srv.register(sd, svc, r.serviceID, opts...)
-}
-
 // NewServer 通过 options 创建一个 NATS RPC 服务端。
 func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
@@ -179,13 +151,10 @@ func (s *Server) buildEndpoint() (*url.URL, error) {
 // 返回的 ServiceInterface 会在 Start 运行后委托给真实的服务。如果在 Start
 // 之后再注册，则会立即订阅。
 func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
-	return s.register(sd, svc, "", opts...)
-}
-
-func (s *Server) register(sd natsrpc.ServiceDesc, svc any, serviceID string, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	serviceID := natsrpc.ServiceIDFromOptions(opts...)
 	ref := &serviceRef{name: subjectEndpoint(s.namespace, sd.ServiceName, serviceID)}
 	if s.started {
 		real, err := s.doRegister(sd, svc, serviceID, opts)
@@ -201,7 +170,7 @@ func (s *Server) register(sd natsrpc.ServiceDesc, svc any, serviceID string, opt
 }
 
 // doRegister 先应用 Kratos 的默认设置，然后注册服务。
-// namespace 和 serviceID 由 wrapper 统一管理，保证真实 subject 与 transport endpoint 一致。
+// serviceID 已在 Register 阶段从 opts 解析出来，用于构造 transport endpoint。
 // 调用方必须持有 s.mu。
 func (s *Server) doRegister(
 	sd natsrpc.ServiceDesc,
@@ -209,15 +178,12 @@ func (s *Server) doRegister(
 	serviceID string,
 	opts []natsrpc.ServiceOption,
 ) (natsrpc.ServiceInterface, error) {
-	merged := make([]natsrpc.ServiceOption, 0, len(opts)+4)
+	merged := make([]natsrpc.ServiceOption, 0, len(opts)+3)
 	merged = append(merged, natsrpc.WithServiceTimeout(s.timeout))
 	merged = append(merged, natsrpc.WithServiceInterceptor(s.interceptor(sd.ServiceName, serviceID)))
 	merged = append(merged, opts...)
 	if s.namespace != "" {
 		merged = append(merged, natsrpc.WithServiceNamespace(s.namespace))
-	}
-	if serviceID != "" {
-		merged = append(merged, natsrpc.WithServiceID(serviceID))
 	}
 	return s.server.Register(sd, svc, merged...)
 }
@@ -382,5 +348,5 @@ func (r *serviceRef) Close() bool {
 	if r.real != nil {
 		return r.real.Close()
 	}
-	return false
+	return false //fixme: ???
 }
