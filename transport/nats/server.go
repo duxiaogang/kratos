@@ -52,7 +52,7 @@ type serverResources struct {
 type Server struct {
 	server     *natsrpc.Server
 	conn       *nats.Conn
-	endpoint   *url.URL //这个值并没意义
+	endpoint   *url.URL //nats server url
 	address    string
 	addressSet bool
 	timeout    time.Duration //业务handler timeout
@@ -170,6 +170,7 @@ func (s *Server) closeResources(resources serverResources, ctx context.Context) 
 	return closeErr
 }
 
+// 注意: 仅可在Start之前调用
 // Use 注册一个带 selector 的服务中间件。
 // selector:
 //   - '/*'
@@ -193,15 +194,22 @@ func (s *Server) Endpoint() (*url.URL, error) {
 	return &copy, err
 }
 
-// buildEndpoint 计算并缓存 endpoint URL。调用方必须持有 s.mu。
+// buildEndpoint 计算 endpoint URL。调用方必须持有 s.mu。
+//
+// 只有在结果不会再变化时才写入 s.endpoint 缓存：显式设置了 Address 时，
+// 地址本身是确定的，可以立即缓存；依赖外部连接解析地址时，只有连接已经
+// CONNECTED 才缓存，否则下次调用（例如连接建立之后）需要重新解析，而不是
+// 永久锁定第一次算出的回退地址。
 func (s *Server) buildEndpoint() (*url.URL, error) {
 	if s.endpoint != nil {
 		return s.endpoint, nil
 	}
 	address := s.address
-	if !s.addressSet && s.conn != nil {
+	cacheable := s.addressSet
+	if !s.addressSet && s.conn != nil && s.conn.IsConnected() {
 		if connectedURL := s.conn.ConnectedUrlRedacted(); connectedURL != "" {
 			address = connectedURL
+			cacheable = true
 		}
 	}
 	u, err := url.Parse(address)
@@ -214,7 +222,9 @@ func (s *Server) buildEndpoint() (*url.URL, error) {
 		q.Set("namespace", s.namespace)
 		u.RawQuery = q.Encode()
 	}
-	s.endpoint = u
+	if cacheable {
+		s.endpoint = u
+	}
 	return u, nil
 }
 
