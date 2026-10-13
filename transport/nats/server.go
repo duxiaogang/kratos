@@ -402,7 +402,7 @@ func (s *Server) interceptor(serviceName, serviceID string) natsrpc.Interceptor 
 			// 交给 natsrpc 一个其文本为 protojson 编码 Status 的 error；
 			// 它会被放进 _ns_error header，客户端的 wrapper 再把它解码
 			// 还原成完整的 *errors.Error。
-			return nil, errors.New(EncodeError(err))
+			return nil, errors.New(encodeError(err))
 		}
 		return reply, nil
 	}

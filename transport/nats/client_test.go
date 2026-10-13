@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	kratoserrors "github.com/go-kratos/kratos/v2/errors"
+	"github.com/go-kratos/kratos/v2/middleware"
 	"github.com/nats-io/nats.go"
 )
 
@@ -71,5 +73,45 @@ func TestDialContextCancelsConnectionAttempt(t *testing.T) {
 	case <-dialer.done:
 	case <-time.After(time.Second):
 		t.Fatal("NATS connection attempt did not finish after release")
+	}
+}
+
+func TestDecodeRemoteError(t *testing.T) {
+	remote := kratoserrors.BadRequest("BAD_INPUT", "invalid input").WithMetadata(map[string]string{"field": "name"})
+	got := decodeRemoteError(errors.New(encodeError(remote)))
+	decoded := kratoserrors.FromError(got)
+	if decoded.Code != remote.Code || decoded.Reason != remote.Reason || decoded.Message != remote.Message {
+		t.Fatalf("decoded remote error = %v, want %v", got, remote)
+	}
+	if decoded.Metadata["field"] != "name" {
+		t.Fatalf("decoded remote metadata = %v, want field=name", decoded.Metadata)
+	}
+
+	for _, local := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		kratoserrors.ServiceUnavailable("LOCAL", "local failure"),
+		errors.New("nats: timeout"),
+	} {
+		if got := decodeRemoteError(local); got != local {
+			t.Errorf("decodeRemoteError(%v) = %v, want original error", local, got)
+		}
+	}
+}
+
+func TestClientMiddlewareErrorPreserved(t *testing.T) {
+	want := kratoserrors.BadRequest("LOCAL", "middleware failure")
+	client := &Client{
+		middleware: []middleware.Middleware{
+			func(next middleware.Handler) middleware.Handler {
+				return func(context.Context, any) (any, error) {
+					return nil, want
+				}
+			},
+		},
+	}
+
+	if got := client.Request(context.Background(), "service", "method", nil, nil); got != want {
+		t.Fatalf("client middleware error = %v, want original %v", got, want)
 	}
 }

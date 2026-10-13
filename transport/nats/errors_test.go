@@ -10,7 +10,11 @@ func TestEncodeDecodeError_RoundTrip(t *testing.T) {
 	orig := kratoserrors.BadRequest("MY_REASON", "bad input").
 		WithMetadata(map[string]string{"k": "v"})
 
-	got := kratoserrors.FromError(DecodeError(EncodeError(orig)))
+	err, ok := decodeEncodedError(encodeError(orig))
+	if !ok {
+		t.Fatal("decodeEncodedError returned ok=false for an encoded error")
+	}
+	got := kratoserrors.FromError(err)
 	if got.Code != orig.Code {
 		t.Errorf("code = %d, want %d", got.Code, orig.Code)
 	}
@@ -25,26 +29,21 @@ func TestEncodeDecodeError_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecodeError_NonJSONFallback(t *testing.T) {
+func TestDecodeEncodedError_NonJSON(t *testing.T) {
 	// 原始的 transport 错误（例如 nats 超时）不是 Status JSON。
-	err := DecodeError("nats: timeout")
-	ke := kratoserrors.FromError(err)
-	if int(ke.Code) != kratoserrors.UnknownCode {
-		t.Errorf("code = %d, want %d", ke.Code, kratoserrors.UnknownCode)
-	}
-	if ke.Message != "nats: timeout" {
-		t.Errorf("message = %q, want %q", ke.Message, "nats: timeout")
+	if err, ok := decodeEncodedError("nats: timeout"); err != nil || ok {
+		t.Errorf("decodeEncodedError(non-JSON) = (%v, %t), want (nil, false)", err, ok)
 	}
 }
 
 func TestEncodeError_Nil(t *testing.T) {
-	if got := EncodeError(nil); got != "" {
-		t.Errorf("EncodeError(nil) = %q, want empty", got)
+	if got := encodeError(nil); got != "" {
+		t.Errorf("encodeError(nil) = %q, want empty", got)
 	}
 }
 
-func TestDecodeError_Empty(t *testing.T) {
-	if got := DecodeError(""); got != nil {
-		t.Errorf("DecodeError(\"\") = %v, want nil", got)
+func TestDecodeEncodedError_Empty(t *testing.T) {
+	if err, ok := decodeEncodedError(""); err != nil || ok {
+		t.Errorf("decodeEncodedError(empty) = (%v, %t), want (nil, false)", err, ok)
 	}
 }

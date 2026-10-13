@@ -132,17 +132,15 @@ func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc
 		// 从 ctx 重新取 transport，而不是用闭包捕获的 tr：中间件可能在
 		// 链路中替换掉 context 里的 transport，header 应以最终的为准。
 		callOpts := c.withHeader(transportFromClient(ctx), opt)
-		return nil, c.client.Publish(service, method, req, callOpts...)
+		err := c.client.Publish(service, method, req, callOpts...)
+		return nil, decodeRemoteError(err)
 	}
 	if len(c.middleware) > 0 {
 		h = middleware.Chain(c.middleware...)(h)
 	}
 
 	_, err := h(ctx, req)
-	if err != nil {
-		return DecodeError(err.Error())
-	}
-	return nil
+	return err
 }
 
 // Request 发送一个请求并等待响应。
@@ -182,18 +180,27 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 				tr.replyHeader.Set(k, v)
 			}
 		}
-		return rep, err
+		return rep, decodeRemoteError(err)
 	}
 	if len(c.middleware) > 0 {
 		h = middleware.Chain(c.middleware...)(h)
 	}
 
 	_, err := h(ctx, req)
-	if err != nil {
-		// 还原服务端编码的结构化 Kratos 错误。
-		return DecodeError(err.Error())
+	return err
+}
+
+// decodeRemoteError 只还原 NATS 响应中由服务端 encodeError 生成的错误。
+// 其他错误属于本地调用链，必须原样返回以保留 errors.Is/As 和 context
+// 取消语义。
+func decodeRemoteError(err error) error {
+	if err == nil {
+		return nil
 	}
-	return nil
+	if decoded, ok := decodeEncodedError(err.Error()); ok {
+		return decoded
+	}
+	return err
 }
 
 func transportFromClient(ctx context.Context) *Transport {
