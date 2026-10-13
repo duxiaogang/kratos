@@ -117,6 +117,8 @@ func connectWithContext(ctx context.Context, address string, opts ...nats.Option
 
 // Publish 发布一条消息，不等待响应。
 // 它实现了 natsrpc.ClientInterface。
+// 调用方不得传入 natsrpc.WithCallHeader 或 natsrpc.WithCallReplyHeader；请求
+// header 由客户端中间件通过 Transport.RequestHeader 写入，Publish 不产生响应。
 func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc.CallOption) error {
 	operation := fmt.Sprintf("/%s/%s", service, method)
 	tr := &Transport{
@@ -145,6 +147,8 @@ func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc
 
 // Request 发送一个请求并等待响应。
 // 它实现了 natsrpc.ClientInterface。
+// 调用方不得传入 natsrpc.WithCallHeader 或 natsrpc.WithCallReplyHeader；请求和
+// 响应 header 由客户端中间件通过 Transport.RequestHeader/ReplyHeader 管理。
 func (c *Client) Request(ctx context.Context, service, method string, req interface{}, rep interface{}, opt ...natsrpc.CallOption) error {
 	// 当调用方未设置 deadline 时，应用客户端的超时时间。
 	if _, ok := ctx.Deadline(); !ok && c.timeout > 0 {
@@ -166,8 +170,9 @@ func (c *Client) Request(ctx context.Context, service, method string, req interf
 	h := func(ctx context.Context, req any) (any, error) {
 		tr := transportFromClient(ctx)
 		callOpts := c.withHeader(tr, opt)
-		// 追加 reply header 容器。注意 withHeader 在无请求头时会原样返回入参
-		// slice，因此这里新建一份再 append，避免污染调用方传入的 opt。
+		// 追加 transport 自己的 reply header 容器。WithCallReplyHeader 是
+		// transport 保留选项，调用方不得传入；这里新建一份 slice，避免污染
+		// 调用方传入的 opt。
 		var rh map[string]string
 		merged := make([]natsrpc.CallOption, 0, len(callOpts)+1)
 		merged = append(merged, callOpts...)
@@ -213,8 +218,9 @@ func transportFromClient(ctx context.Context) *Transport {
 }
 
 // withHeader 为本次调用构建 natsrpc 的 call options，并追加中间件写入到
-// transport 上的所有 header。每次调用都返回一个全新的 slice，因此重试时
-// 绝不会累积重复的 option。
+// transport 上的所有 header。调用方不得在 base 中传入 WithCallHeader；该
+// 选项由 transport 保留。每次调用都返回一个全新的 slice，因此重试时绝不会
+// 累积重复的 option。
 func (c *Client) withHeader(tr *Transport, base []natsrpc.CallOption) []natsrpc.CallOption {
 	if tr == nil {
 		return base
