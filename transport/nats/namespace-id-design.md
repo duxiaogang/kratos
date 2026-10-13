@@ -59,10 +59,10 @@ example.User.user-1
 并用这个值构造 server-side `Transport.Endpoint()`；随后把原始 options 交给底层 `natsrpc.Server.Register`。
 因此正常使用 `natsrpc.WithServiceID` 时，两层得到的是同一个有效 ID（重复设置时以最后一个 `WithServiceID` 为准）。
 
-如果配置了 `nats.Namespace`，wrapper 会在传给底层的 options 末尾追加 `natsrpc.WithServiceNamespace(s.namespace)`，
-所以 Server 级 namespace 会覆盖同一组 options 中的 `WithServiceNamespace`。wrapper 构造 endpoint 时也只读取
-`nats.Namespace`；不要用 service-level `WithServiceNamespace` 为同一个 Server 注册不同 namespace，否则 wrapper
-endpoint 可能与底层 subject 不一致。需要不同 namespace 时应创建不同的 Kratos NATS Server。
+wrapper 总会在传给底层的 options 末尾追加 `natsrpc.WithServiceNamespace(s.namespace)`，所以 Server 级 namespace（为空时
+表示默认 namespace）会覆盖同一组 options 中的 service-level `WithServiceNamespace`。wrapper 构造 endpoint 时也只读取
+`nats.Namespace`；不要用 service-level `WithServiceNamespace` 为同一个 Server 注册不同 namespace。需要不同 namespace
+时应创建不同的 Kratos NATS Server。
 
 `Register` 在 `Start` 之前只缓存服务描述符，真正的底层订阅在 `Start` 中创建；`Start` 之后再注册则立即订阅。
 
@@ -76,8 +76,9 @@ nats://127.0.0.1:4222?namespace=example
 ```
 
 如果通过 `Endpoint(*url.URL)` 显式设置了 endpoint，则直接返回显式设置的 URL，不再根据 `Address` 或 `Namespace`
-生成 query。这个 endpoint 与请求上下文中的 `Transport.Endpoint()` 含义不同：前者指向 broker，后者表示当前
-service 的 subject 路径。
+生成 query。如果通过 `Connection(*nats.Conn)` 传入已连接的连接，且没有显式设置 `Address` 或 `Endpoint`，则使用
+连接当前 broker 的地址。这个 endpoint 与请求上下文中的 `Transport.Endpoint()` 含义不同：前者指向 broker，后者
+表示当前 service 的 subject 路径。
 
 ## Client 侧的当前实现
 

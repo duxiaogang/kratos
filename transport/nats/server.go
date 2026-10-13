@@ -54,6 +54,7 @@ type Server struct {
 	conn       *nats.Conn
 	endpoint   *url.URL //这个值并没意义
 	address    string
+	addressSet bool
 	timeout    time.Duration //业务handler timeout
 	middleware matcher.Matcher
 	namespace  string
@@ -181,11 +182,15 @@ func (s *Server) Use(selector string, m ...middleware.Middleware) {
 // Endpoint 返回用于注册中心的真实地址。
 //
 //	nats://127.0.0.1:4222?namespace=myapp
-//	事实上这个值并没什么用
 func (s *Server) Endpoint() (*url.URL, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.buildEndpoint()
+	endpoint, err := s.buildEndpoint()
+	if endpoint == nil {
+		return nil, err
+	}
+	copy := *endpoint
+	return &copy, err
 }
 
 // buildEndpoint 计算并缓存 endpoint URL。调用方必须持有 s.mu。
@@ -193,7 +198,13 @@ func (s *Server) buildEndpoint() (*url.URL, error) {
 	if s.endpoint != nil {
 		return s.endpoint, nil
 	}
-	u, err := url.Parse(s.address)
+	address := s.address
+	if !s.addressSet && s.conn != nil {
+		if connectedURL := s.conn.ConnectedUrlRedacted(); connectedURL != "" {
+			address = connectedURL
+		}
+	}
+	u, err := url.Parse(address)
 	if err != nil {
 		return nil, err
 	}
@@ -250,9 +261,7 @@ func (s *Server) doRegister(
 	merged = append(merged, natsrpc.WithServiceTimeout(s.timeout))
 	merged = append(merged, natsrpc.WithServiceInterceptor(s.interceptor(sd.ServiceName, serviceID)))
 	merged = append(merged, opts...)
-	if s.namespace != "" {
-		merged = append(merged, natsrpc.WithServiceNamespace(s.namespace))
-	}
+	merged = append(merged, natsrpc.WithServiceNamespace(s.namespace))
 	return s.server.Register(sd, svc, merged...)
 }
 
@@ -280,6 +289,9 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 	for _, p := range s.pending {
+		if p.ref.isClosed() {
+			continue
+		}
 		real, err := s.doRegister(p.sd, p.svc, p.serviceID, p.opts)
 		if err != nil {
 			resources := s.detachResourcesLocked(true)
@@ -389,15 +401,29 @@ func (s *Server) interceptor(serviceName, serviceID string) natsrpc.Interceptor 
 // serviceRef 是一个已注册服务的句柄。在 Start 之前它只是一个占位符；
 // 之后它会委托给真实的 natsrpc 服务。
 type serviceRef struct {
-	mu   sync.Mutex
-	name string
-	real natsrpc.ServiceInterface
+	mu     sync.Mutex
+	name   string
+	real   natsrpc.ServiceInterface
+	closed bool
 }
 
 func (r *serviceRef) set(real natsrpc.ServiceInterface) {
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		if real != nil {
+			real.Close()
+		}
+		return
+	}
 	r.real = real
 	r.mu.Unlock()
+}
+
+func (r *serviceRef) isClosed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closed
 }
 
 // Name 返回服务名。
@@ -410,12 +436,19 @@ func (r *serviceRef) Name() string {
 	return r.name
 }
 
-// Close 在服务处于活跃状态时取消其订阅。
+// Close 取消服务订阅；如果服务尚未 Start，则取消待注册的服务。
 func (r *serviceRef) Close() bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.real != nil {
-		return r.real.Close()
+	if r.closed {
+		r.mu.Unlock()
+		return false
 	}
-	return false //fixme: 无法Close？
+	r.closed = true
+	real := r.real
+	r.real = nil
+	r.mu.Unlock()
+	if real != nil {
+		return real.Close()
+	}
+	return true
 }

@@ -17,13 +17,19 @@ type ServerOption func(o *Server)
 func Address(addr string) ServerOption {
 	return func(s *Server) {
 		s.address = addr
+		s.addressSet = true
 	}
 }
 
 // Endpoint 设置服务端 endpoint。
 func Endpoint(endpoint *url.URL) ServerOption {
 	return func(s *Server) {
-		s.endpoint = endpoint
+		if endpoint == nil {
+			s.endpoint = nil
+			return
+		}
+		copy := *endpoint
+		s.endpoint = &copy
 	}
 }
 

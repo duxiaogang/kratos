@@ -117,12 +117,14 @@ func TestServer_Endpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := NewServer(
-				Address(tt.address),
-				Namespace(tt.namespace),
-			)
+			opts := []ServerOption{Address(tt.address), Namespace(tt.namespace)}
 			if tt.endpoint != nil {
-				srv.endpoint = tt.endpoint
+				opts = append(opts, Endpoint(tt.endpoint))
+			}
+			srv := NewServer(opts...)
+			if tt.endpoint != nil {
+				// Endpoint must not retain the caller's mutable URL.
+				tt.endpoint.Host = "mutated:4222"
 			}
 
 			ep, err := srv.Endpoint()
@@ -132,6 +134,15 @@ func TestServer_Endpoint(t *testing.T) {
 			}
 			if ep.String() != tt.want {
 				t.Errorf("Server.Endpoint() = %v, want %v", ep.String(), tt.want)
+			}
+			// Mutating the returned URL must not change the server's endpoint.
+			ep.Host = "mutated:4222"
+			ep.RawQuery = "changed=true"
+			again, err := srv.Endpoint()
+			if err != nil {
+				t.Errorf("Server.Endpoint() second call error = %v", err)
+			} else if again.String() != tt.want {
+				t.Errorf("Server.Endpoint() changed after returned URL mutation = %v, want %v", again.String(), tt.want)
 			}
 		})
 	}
@@ -229,5 +240,36 @@ func TestServerInterceptorPreservesReplyLater(t *testing.T) {
 	})
 	if !errors.Is(err, natsrpc.ErrReplyLater) {
 		t.Fatalf("interceptor() error = %v, want %v", err, natsrpc.ErrReplyLater)
+	}
+}
+
+type testServiceRefService struct {
+	name   string
+	closed bool
+}
+
+func (s *testServiceRefService) Name() string { return s.name }
+
+func (s *testServiceRefService) Close() bool {
+	s.closed = true
+	return true
+}
+
+func TestServiceRefCloseBeforeStart(t *testing.T) {
+	ref := &serviceRef{name: "test.Service"}
+	if !ref.Close() {
+		t.Fatal("Close() = false, want true for a pending service")
+	}
+	if !ref.isClosed() {
+		t.Fatal("serviceRef is not marked closed")
+	}
+	if ref.Close() {
+		t.Fatal("second Close() = true, want false")
+	}
+
+	service := &testServiceRefService{name: "test.Service"}
+	ref.set(service)
+	if !service.closed {
+		t.Fatal("service registered after Close() was not closed")
 	}
 }
