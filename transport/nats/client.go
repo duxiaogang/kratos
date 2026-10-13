@@ -30,6 +30,13 @@ type Client struct {
 
 // Dial 创建一个 NATS 客户端连接。
 func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	options := &clientOptions{
 		address: nats.DefaultURL,
 		timeout: 2 * time.Second,
@@ -51,7 +58,7 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		c.conn = options.conn
 		c.ownConn = false
 	} else {
-		conn, err := nats.Connect(options.address, options.natsOpts...) //nats.Connect不使用ctx?
+		conn, err := connectWithContext(ctx, options.address, options.natsOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("[NATS] failed to connect: %w", err)
 		}
@@ -68,6 +75,44 @@ func Dial(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c.client = natsrpc.NewClient(c.conn, clientOpts...)
 
 	return c, nil
+}
+
+// connectWithContext adapts nats.Connect, which does not accept a context, to
+// the context-aware Dial API. If the context is canceled while connecting, a
+// late connection is closed as soon as nats.Connect returns.
+func connectWithContext(ctx context.Context, address string, opts ...nats.Option) (*nats.Conn, error) {
+	type result struct {
+		conn *nats.Conn
+		err  error
+	}
+
+	connected := make(chan result, 1)
+	go func() {
+		conn, err := nats.Connect(address, opts...)
+		connected <- result{conn: conn, err: err}
+	}()
+
+	select {
+	case res := <-connected:
+		if err := ctx.Err(); err != nil {
+			if res.conn != nil {
+				res.conn.Close()
+			}
+			return nil, err
+		}
+		if res.err != nil {
+			return nil, res.err
+		}
+		return res.conn, nil
+	case <-ctx.Done():
+		go func() {
+			res := <-connected
+			if res.conn != nil {
+				res.conn.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	}
 }
 
 // Publish 发布一条消息，不等待响应。
