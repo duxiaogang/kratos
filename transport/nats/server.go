@@ -22,6 +22,9 @@ var (
 	_ transport.Server         = (*Server)(nil)
 	_ transport.Endpointer     = (*Server)(nil)
 	_ natsrpc.ServiceRegistrar = (*Server)(nil)
+
+	errServerAlreadyStarted = errors.New("[NATS] server already started")
+	errServerStopped        = errors.New("[NATS] server has been stopped")
 )
 
 // pendingService 表示一次被延迟到 Start 时才真正执行的 Register 调用。
@@ -33,6 +36,13 @@ type pendingService struct {
 	ref       *serviceRef
 }
 
+type serverResources struct {
+	server  *natsrpc.Server
+	conn    *nats.Conn
+	ownConn bool
+	timeout time.Duration
+}
+
 // Server 是 NATS RPC 传输层服务端。
 //
 // 底层的 natsrpc.Server 会在服务注册的那一刻立即订阅 NATS subject。为了
@@ -42,7 +52,7 @@ type pendingService struct {
 type Server struct {
 	server     *natsrpc.Server
 	conn       *nats.Conn
-	endpoint   *url.URL //fixme: 这个目前没意义
+	endpoint   *url.URL //这个值并没意义
 	address    string
 	timeout    time.Duration //业务handler timeout
 	middleware matcher.Matcher
@@ -85,8 +95,9 @@ func NewServer(opts ...ServerOption) *Server {
 }
 
 // connect 建立 NATS 连接以及底层的 natsrpc.Server。
-// 该方法只在 Start 中调用一次；调用方必须持有 s.mu。
+// 调用方必须持有 s.mu。
 func (s *Server) connect() error {
+	s.server = nil
 	if s.conn == nil {
 		conn, err := nats.Connect(s.address, s.natsOpts...)
 		if err != nil {
@@ -101,10 +112,61 @@ func (s *Server) connect() error {
 		natsrpc.WithServerEncoder(s.encoder),
 	)
 	if err != nil {
+		if s.ownConn && s.conn != nil {
+			s.conn.Close()
+			s.conn = nil
+			s.ownConn = false
+		}
 		return fmt.Errorf("[NATS] failed to create server: %w", err)
 	}
 	s.server = server
 	return nil
+}
+
+// detachResourcesLocked 脱离当前底层 server 和连接。调用方必须持有 s.mu。
+// 当 keepExternalConn 为 true 时，外部传入的连接会保留，以便启动失败后重试。
+func (s *Server) detachResourcesLocked(keepExternalConn bool) serverResources {
+	resources := serverResources{
+		server:  s.server,
+		conn:    s.conn,
+		ownConn: s.ownConn,
+		timeout: s.timeout,
+	}
+	s.server = nil
+	s.started = false
+	if !keepExternalConn || resources.ownConn {
+		s.conn = nil
+		s.ownConn = false
+	}
+	return resources
+}
+
+// closeResources 关闭底层 server，并在当前 Server 拥有连接时关闭连接。
+func (s *Server) closeResources(resources serverResources, ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if resources.server == nil && (!resources.ownConn || resources.conn == nil) {
+		return nil
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		timeout := resources.timeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	var closeErr error
+	if resources.server != nil {
+		closeErr = resources.server.Close(ctx)
+	}
+	if resources.ownConn && resources.conn != nil {
+		resources.conn.Close()
+	}
+	return closeErr
 }
 
 // Use 注册一个带 selector 的服务中间件。
@@ -119,6 +181,7 @@ func (s *Server) Use(selector string, m ...middleware.Middleware) {
 // Endpoint 返回用于注册中心的真实地址。
 //
 //	nats://127.0.0.1:4222?namespace=myapp
+//	事实上这个值并没什么用
 func (s *Server) Endpoint() (*url.URL, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,6 +216,11 @@ func (s *Server) buildEndpoint() (*url.URL, error) {
 func (s *Server) Register(sd natsrpc.ServiceDesc, svc any, opts ...natsrpc.ServiceOption) (natsrpc.ServiceInterface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	select {
+	case <-s.quit:
+		return nil, errServerStopped
+	default:
+	}
 
 	serviceID := natsrpc.ServiceIDFromOptions(opts...)
 	ref := &serviceRef{name: subjectEndpoint(s.namespace, sd.ServiceName, serviceID)}
@@ -191,7 +259,22 @@ func (s *Server) doRegister(
 // Start 建立连接、订阅所有已注册的服务，然后阻塞直到 Stop。
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
+	if s.started {
+		s.mu.Unlock()
+		return errServerAlreadyStarted
+	}
+	select {
+	case <-s.quit:
+		s.mu.Unlock()
+		return errServerStopped
+	default:
+	}
 	s.baseCtx = ctx
+	endpoint, err := s.buildEndpoint()
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	if err := s.connect(); err != nil {
 		s.mu.Unlock()
 		return err
@@ -199,18 +282,20 @@ func (s *Server) Start(ctx context.Context) error {
 	for _, p := range s.pending {
 		real, err := s.doRegister(p.sd, p.svc, p.serviceID, p.opts)
 		if err != nil {
+			resources := s.detachResourcesLocked(true)
+			for _, pending := range s.pending {
+				pending.ref.set(nil)
+			}
 			s.mu.Unlock()
+			if closeErr := s.closeResources(resources, context.Background()); closeErr != nil {
+				log.Errorf("[NATS] failed to roll back server start: %v", closeErr)
+			}
 			return err
 		}
 		p.ref.set(real)
 	}
 	s.pending = nil
 	s.started = true
-	endpoint, err := s.buildEndpoint()
-	if err != nil {
-		s.mu.Unlock()
-		return err
-	}
 	quit := s.quit
 	s.mu.Unlock()
 
@@ -235,32 +320,13 @@ func (s *Server) Stop(ctx context.Context) error {
 	default:
 		close(s.quit)
 	}
-	server := s.server
-	conn := s.conn
-	ownConn := s.ownConn
-	timeout := s.timeout
-	s.started = false
+	resources := s.detachResourcesLocked(false)
+	s.pending = nil
 	s.mu.Unlock()
 
-	// natsrpc 的 Close 通过 FlushWithContext 来 flush，这要求带有 deadline。
-	// app 传入的 context 可能没有 deadline（stopTimeout 默认为 0），因此
-	// 这里确保一定带有 deadline。
-	if _, ok := ctx.Deadline(); !ok {
-		if timeout <= 0 {
-			timeout = 5 * time.Second
-		}
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-
-	if server != nil {
-		if err := server.Close(ctx); err != nil {
-			log.Errorf("[NATS] failed to close server: %v", err)
-		}
-	}
-	if ownConn && conn != nil {
-		conn.Close()
+	if err := s.closeResources(resources, ctx); err != nil {
+		log.Errorf("[NATS] failed to close server: %v", err)
+		return err
 	}
 	return nil
 }
@@ -308,6 +374,9 @@ func (s *Server) interceptor(serviceName, serviceID string) natsrpc.Interceptor 
 			_ = natsrpc.SetReplyHeader(ctx, rh)
 		}
 		if err != nil {
+			if errors.Is(err, natsrpc.ErrReplyLater) {
+				return nil, err
+			}
 			// 交给 natsrpc 一个其文本为 protojson 编码 Status 的 error；
 			// 它会被放进 _ns_error header，客户端的 wrapper 再把它解码
 			// 还原成完整的 *errors.Error。
@@ -348,5 +417,5 @@ func (r *serviceRef) Close() bool {
 	if r.real != nil {
 		return r.real.Close()
 	}
-	return false //fixme: ???
+	return false //fixme: 无法Close？
 }

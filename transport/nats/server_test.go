@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"testing"
 	"time"
@@ -184,5 +185,49 @@ func TestServer_Use(t *testing.T) {
 	matched := srv.middleware.Match("/test/method")
 	if len(matched) != 1 {
 		t.Errorf("Server.middleware.Match() length = %v, want %v", len(matched), 1)
+	}
+}
+
+func TestServerStartRejectsDuplicateStart(t *testing.T) {
+	srv := NewServer()
+	srv.started = true
+
+	if err := srv.Start(context.Background()); !errors.Is(err, errServerAlreadyStarted) {
+		t.Fatalf("Start() error = %v, want %v", err, errServerAlreadyStarted)
+	}
+}
+
+func TestServerStartRejectsAfterStop(t *testing.T) {
+	srv := NewServer()
+	if err := srv.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	if err := srv.Start(context.Background()); !errors.Is(err, errServerStopped) {
+		t.Fatalf("Start() error = %v, want %v", err, errServerStopped)
+	}
+}
+
+func TestServerRegisterRejectsAfterStop(t *testing.T) {
+	srv := NewServer()
+	if err := srv.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	_, err := srv.Register(natsrpc.ServiceDesc{ServiceName: "test.Service"}, nil)
+	if !errors.Is(err, errServerStopped) {
+		t.Fatalf("Register() error = %v, want %v", err, errServerStopped)
+	}
+}
+
+func TestServerInterceptorPreservesReplyLater(t *testing.T) {
+	srv := NewServer()
+	interceptor := srv.interceptor("test.Service", "instance-1")
+
+	_, err := interceptor(context.Background(), "Method", nil, func(context.Context, interface{}) (interface{}, error) {
+		return nil, natsrpc.ErrReplyLater
+	})
+	if !errors.Is(err, natsrpc.ErrReplyLater) {
+		t.Fatalf("interceptor() error = %v, want %v", err, natsrpc.ErrReplyLater)
 	}
 }
