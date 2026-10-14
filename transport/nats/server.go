@@ -361,7 +361,15 @@ func (s *Server) interceptor(serviceName, serviceID string) natsrpc.Interceptor 
 		// 与 app 的 base context 合并，使其中的值（如 logger）得以传播，
 		// 并使 app 关闭时能取消处理中的 handler。
 		ctx, cancel := ic.Merge(ctx, s.baseCtx)
-		defer cancel()
+		keepContext := false
+		defer func() {
+			// ErrReplyLater 表示调用方会在当前 handler 返回后继续使用
+			// 这个 context 调用 natsrpc.Reply。此时必须让底层请求的
+			// context、超时或 app context 来负责结束它的生命周期。
+			if !keepContext {
+				cancel()
+			}
+		}()
 
 		operation := fmt.Sprintf("/%s/%s", serviceName, method)
 
@@ -397,6 +405,7 @@ func (s *Server) interceptor(serviceName, serviceID string) natsrpc.Interceptor 
 		}
 		if err != nil {
 			if errors.Is(err, natsrpc.ErrReplyLater) {
+				keepContext = true
 				return nil, err
 			}
 			// 交给 natsrpc 一个其文本为 protojson 编码 Status 的 error；

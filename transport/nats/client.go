@@ -150,8 +150,8 @@ func (c *Client) Publish(service, method string, req interface{}, opt ...natsrpc
 // 调用方不得传入 natsrpc.WithCallHeader 或 natsrpc.WithCallReplyHeader；请求和
 // 响应 header 由客户端中间件通过 Transport.RequestHeader/ReplyHeader 管理。
 func (c *Client) Request(ctx context.Context, service, method string, req interface{}, rep interface{}, opt ...natsrpc.CallOption) error {
-	// 当调用方未设置 deadline 时，应用客户端的超时时间。
-	if _, ok := ctx.Deadline(); !ok && c.timeout > 0 {
+	// 应用客户端超时；context.WithTimeout 会保留调用方更早的 deadline。
+	if c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
 		defer cancel()

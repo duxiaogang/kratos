@@ -234,12 +234,22 @@ func TestServerRegisterRejectsAfterStop(t *testing.T) {
 func TestServerInterceptorPreservesReplyLater(t *testing.T) {
 	srv := NewServer()
 	interceptor := srv.interceptor("test.Service", "instance-1")
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var handlerCtx context.Context
 
-	_, err := interceptor(context.Background(), "Method", nil, func(context.Context, interface{}) (interface{}, error) {
+	_, err := interceptor(parent, "Method", nil, func(ctx context.Context, _ interface{}) (interface{}, error) {
+		handlerCtx = ctx
 		return nil, natsrpc.ErrReplyLater
 	})
 	if !errors.Is(err, natsrpc.ErrReplyLater) {
 		t.Fatalf("interceptor() error = %v, want %v", err, natsrpc.ErrReplyLater)
+	}
+	if handlerCtx == nil {
+		t.Fatal("handler context is nil")
+	}
+	if err := handlerCtx.Err(); err != nil {
+		t.Fatalf("handler context was canceled after ErrReplyLater: %v", err)
 	}
 }
 

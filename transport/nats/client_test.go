@@ -115,3 +115,56 @@ func TestClientMiddlewareErrorPreserved(t *testing.T) {
 		t.Fatalf("client middleware error = %v, want original %v", got, want)
 	}
 }
+
+func TestClientRequestDeadline(t *testing.T) {
+	tests := []struct {
+		name              string
+		callerTimeout     time.Duration
+		clientTimeout     time.Duration
+		wantClientTimeout bool
+	}{
+		{name: "no caller deadline", clientTimeout: time.Minute, wantClientTimeout: true},
+		{name: "longer caller deadline", callerTimeout: time.Hour, clientTimeout: time.Minute, wantClientTimeout: true},
+		{name: "shorter caller deadline", callerTimeout: time.Minute, clientTimeout: time.Hour},
+		{name: "zero timeout with caller deadline", callerTimeout: time.Minute},
+		{name: "zero timeout without caller deadline"},
+		{name: "negative timeout with caller deadline", callerTimeout: time.Minute, clientTimeout: -time.Second},
+		{name: "negative timeout without caller deadline", clientTimeout: -time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			if tt.callerTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.callerTimeout)
+				defer cancel()
+			}
+			var callCtx context.Context
+			client := &Client{
+				timeout: tt.clientTimeout,
+				middleware: []middleware.Middleware{
+					func(middleware.Handler) middleware.Handler {
+						return func(ctx context.Context, _ any) (any, error) {
+							callCtx = ctx
+							return nil, nil
+						}
+					},
+				},
+			}
+
+			before := time.Now()
+			if err := client.Request(ctx, "service", "method", nil, nil); err != nil {
+				t.Fatalf("Request() error = %v", err)
+			}
+			after := time.Now()
+			deadline, ok := callCtx.Deadline()
+			if tt.wantClientTimeout {
+				if !ok || deadline.Before(before.Add(tt.clientTimeout)) || deadline.After(after.Add(tt.clientTimeout)) {
+					t.Fatalf("request deadline = %v, has deadline = %v, want client timeout %v", deadline, ok, tt.clientTimeout)
+				}
+			} else if want, wantOK := ctx.Deadline(); ok != wantOK || !deadline.Equal(want) {
+				t.Fatalf("request deadline = %v, %v, want caller deadline %v, %v", deadline, ok, want, wantOK)
+			}
+		})
+	}
+}
